@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -58,6 +59,18 @@ public class ChatService {
             - Luôn trả lời bằng tiếng Việt, thân thiện, lịch sự, NGẮN GỌN, dễ hiểu.
             - Khi hướng dẫn nhiều bước, trình bày bằng danh sách đánh số rõ ràng.
             - Chủ động hỏi lại 1 câu để làm rõ nhu cầu nếu câu hỏi còn mơ hồ.
+
+            # CÔNG CỤ TRA CỨU DỮ LIỆU (Tool Calling)
+            Bạn có các công cụ tra cứu DỮ LIỆU THẬT: dịch vụ & giá (search_services),
+            danh sách bác sĩ & phí khám (list_doctors), khung giờ trống của bác sĩ theo ngày
+            (check_availability), thông tin phòng khám (get_clinic_info), và — nếu khách ĐÃ ĐĂNG NHẬP —
+            lịch hẹn (get_my_appointments) & hóa đơn (get_my_invoices) cá nhân của họ.
+            Hãy CHỦ ĐỘNG gọi công cụ thay vì đoán số liệu.
+            ⚠️ QUAN TRỌNG: Kết quả công cụ sẽ được hiển thị cho khách dưới dạng THẺ (card) trực quan,
+            nên bạn KHÔNG cần liệt kê lại từng dòng dữ liệu trong câu trả lời. Chỉ viết 1–2 câu dẫn
+            NGẮN GỌN, thân thiện (vd: "Dạ đây là các dịch vụ phù hợp ạ:" hoặc
+            "Bác sĩ A ngày mai còn vài khung giờ trống nhé, bạn xem bên dưới:").
+            Nếu công cụ báo khách chưa đăng nhập, hãy lịch sự hướng dẫn họ đăng nhập bằng số điện thoại.
 
             # THÔNG TIN PHÒNG KHÁM
             - Giờ làm việc: 8:00–20:00 tất cả các ngày trong tuần.
@@ -172,13 +185,15 @@ public class ChatService {
 
         List<ChatMessage> history = messageRepository.findByConversationIdOrderByIdAsc(conv.getId());
         List<Map<String, Object>> messages = new ArrayList<>();
-        messages.add(Map.of("role", "system", "content", SYSTEM_PROMPT));
+        // System prompt + ngày hiện tại (để AI suy ra "hôm nay"/"ngày mai" cho check_availability)
+        String systemContent = SYSTEM_PROMPT + "\n\n# NGÀY HIỆN TẠI\nHôm nay là " + LocalDate.now() + ".";
+        messages.add(Map.of("role", "system", "content", systemContent));
         int start = Math.max(0, history.size() - MAX_HISTORY);
         for (int i = start; i < history.size(); i++) {
             ChatMessage m = history.get(i);
             messages.add(Map.of("role", m.getRole().name(), "content", m.getContent()));
         }
-        return new Prepared(conv.getId(), messages);
+        return new Prepared(conv.getId(), messages, userId);
     }
 
     /** Vòng lặp: gọi AI (có tool) tối đa MAX_TOOL_STEPS lần, rồi stream câu trả lời cuối. */
@@ -202,12 +217,21 @@ public class ChatService {
                 // AI yêu cầu gọi tool → thực thi rồi đưa kết quả lại cho AI
                 messages.add(buildAssistantToolEcho(result));
                 for (GroqClient.ToolCall tc : result.toolCalls()) {
-                    String toolResult = chatTools.execute(tc.name(), tc.arguments());
+                    ChatTools.ToolResult toolResult = chatTools.execute(tc.name(), tc.arguments(), prep.userId());
+
+                    // JSON thô đưa lại cho model để nó viết câu dẫn
                     Map<String, Object> toolMsg = new HashMap<>();
                     toolMsg.put("role", "tool");
                     toolMsg.put("tool_call_id", tc.id());
-                    toolMsg.put("content", toolResult);
+                    toolMsg.put("content", toolResult.forModel());
                     messages.add(toolMsg);
+
+                    // Nếu tool có CARD → đẩy ngay cho frontend render thẻ trực quan
+                    if (toolResult.cardType() != null && toolResult.cardData() != null) {
+                        safeSend(emitter, "card", Map.of(
+                                "type", toolResult.cardType(),
+                                "data", toolResult.cardData()));
+                    }
                 }
                 toolRounds++;
             }
@@ -283,8 +307,8 @@ public class ChatService {
         conversationRepository.save(conv);
     }
 
-    /** Holder: id hội thoại + danh sách message gửi cho AI. */
-    public record Prepared(Integer conversationId, List<Map<String, Object>> messages) {}
+    /** Holder: id hội thoại + danh sách message gửi cho AI + userId (null nếu khách chưa đăng nhập). */
+    public record Prepared(Integer conversationId, List<Map<String, Object>> messages, Integer userId) {}
 
     private ChatConversation resolveConversation(ChatRequest req, Integer userId) {
         if (req.getConversationId() != null) {

@@ -1,8 +1,23 @@
 import api from '@/shared/lib/axios';
 
+/** Loại thẻ trực quan do tool trả về (khớp cardType ở backend ChatTools). */
+export type CardType =
+  | 'services'
+  | 'doctors'
+  | 'availability'
+  | 'clinic'
+  | 'appointments'
+  | 'invoices';
+
+export interface CardEvent {
+  type: CardType;
+  data: any;
+}
+
 export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
+  cards?: CardEvent[];
 }
 
 const API_BASE = (import.meta as any).env?.VITE_API_URL ?? 'http://localhost:8080/api';
@@ -38,6 +53,7 @@ export async function sendChatMessage(
 export interface StreamHandlers {
   onMeta?: (conversationId: number) => void;
   onDelta: (chunk: string) => void;
+  onCard?: (card: CardEvent) => void;
 }
 
 /**
@@ -96,6 +112,8 @@ export async function streamChatMessage(
         handlers.onMeta?.(json.conversationId);
       } else if (event === 'delta') {
         handlers.onDelta(json.content ?? '');
+      } else if (event === 'card') {
+        if (json.type) handlers.onCard?.({ type: json.type, data: json.data });
       } else if (event === 'error') {
         throw new Error(json.message ?? 'Lỗi không xác định');
       }

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { MessageCircle, X, Send, Bot, User } from 'lucide-react';
 import { streamChatMessage, type ChatMessage } from '@/features/chatbot/api/chatbot.api';
+import ChatCards from '@/features/chatbot/components/ChatCards';
 
 const WELCOME: ChatMessage = {
   role: 'assistant',
@@ -52,12 +53,22 @@ export default function ChatbotWidget() {
           return copy;
         });
 
+      // Gắn 1 card (do tool trả về) vào bong bóng assistant đang stream
+      const attachCard = (card: Parameters<NonNullable<Parameters<typeof streamChatMessage>[2]['onCard']>>[0]) =>
+        setMessages((prev) => {
+          const copy = [...prev];
+          const last = copy[copy.length - 1];
+          copy[copy.length - 1] = { ...last, cards: [...(last.cards ?? []), card] };
+          return copy;
+        });
+
       try {
         await streamChatMessage(content, conversationId.current, {
           onMeta: (id) => {
             conversationId.current = id;
           },
           onDelta: appendToLast,
+          onCard: attachCard,
         });
       } catch {
         setMessages((prev) => {
@@ -118,32 +129,42 @@ export default function ChatbotWidget() {
 
           {/* Danh sách tin nhắn */}
           <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto bg-[#F8FAFC] p-4">
-            {messages.map((m, i) => (
-              // Bỏ qua bong bóng assistant rỗng (placeholder chờ stream)
-              m.role === 'assistant' && m.content === '' ? null : (
-              <div key={i} className={`flex gap-2 ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                <div
-                  className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full ${
-                    m.role === 'user' ? 'bg-[#1a3a5c] text-white' : 'bg-[#6EC1B4]/20 text-[#1a3a5c]'
-                  }`}
-                >
-                  {m.role === 'user' ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
+            {messages.map((m, i) => {
+              const isUser = m.role === 'user';
+              const hasCards = !!m.cards?.length;
+              // Bỏ qua bong bóng assistant rỗng (placeholder chờ stream, chưa có chữ & chưa có card)
+              if (!isUser && m.content === '' && !hasCards) return null;
+              return (
+                <div key={i} className={`flex gap-2 ${isUser ? 'flex-row-reverse' : ''}`}>
+                  <div
+                    className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full ${
+                      isUser ? 'bg-[#1a3a5c] text-white' : 'bg-[#6EC1B4]/20 text-[#1a3a5c]'
+                    }`}
+                  >
+                    {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
+                  </div>
+                  <div className={`flex min-w-0 max-w-[85%] flex-col ${isUser ? 'items-end' : 'items-start'}`}>
+                    {m.content !== '' && (
+                      <div
+                        className={`w-fit max-w-full whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
+                          isUser
+                            ? 'rounded-tr-sm bg-[#1a3a5c] text-white'
+                            : 'rounded-tl-sm border border-gray-100 bg-white text-gray-700'
+                        }`}
+                      >
+                        {m.content}
+                      </div>
+                    )}
+                    {hasCards && <ChatCards cards={m.cards!} />}
+                  </div>
                 </div>
-                <div
-                  className={`max-w-[78%] whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
-                    m.role === 'user'
-                      ? 'rounded-tr-sm bg-[#1a3a5c] text-white'
-                      : 'rounded-tl-sm border border-gray-100 bg-white text-gray-700'
-                  }`}
-                >
-                  {m.content}
-                </div>
-              </div>
-              )
-            ))}
+              );
+            })}
 
             {/* Hiệu ứng đang gõ — chỉ khi chưa có chữ nào stream về */}
-            {loading && (messages[messages.length - 1]?.content ?? '') === '' && (
+            {loading &&
+              (messages[messages.length - 1]?.content ?? '') === '' &&
+              !messages[messages.length - 1]?.cards?.length && (
               <div className="flex gap-2">
                 <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-[#6EC1B4]/20 text-[#1a3a5c]">
                   <Bot className="h-4 w-4" />
