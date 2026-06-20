@@ -1,80 +1,15 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '@/app/providers/AuthProvider';
-import { doctorApi } from '@/features/doctors/api/doctor.api';
-import { appointmentApi } from '@/features/appointments/api/appointment.api';
-import type { Appointment } from '@/features/appointments/types/appointment.types';
-
-type HistoryItem = Appointment;
-type AppointmentDetail = Appointment;
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useDoctorHistory } from '@/features/medical-records/hooks/useDoctorHistory';
 
 const fmtDate = (iso: string) => {
   const d = new Date(iso);
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 };
 
-const todayISO = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-
-const firstDayOfMonth = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
-};
-
 export default function HistoryPage() {
-  const { user } = useAuth();
-  const [doctorId, setDoctorId] = useState<number | null>(null);
-  const [items, setItems] = useState<HistoryItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { items, loading, dateFrom, setDateFrom, dateTo, setDateTo, applyFilter, selected, selectedRecord, detailLoading, openDetail, closeDetail } = useDoctorHistory();
   const [search, setSearch] = useState('');
-  const [dateFrom, setDateFrom] = useState(firstDayOfMonth());
-  const [dateTo, setDateTo] = useState(todayISO());
-
-  // Detail panel
-  const [selected, setSelected] = useState<AppointmentDetail | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
-
-  const load = useCallback(async (docId: number, from: string, to: string) => {
-    setLoading(true);
-    try {
-      const data = await appointmentApi.getList({
-        doctorId: docId,
-        status: 'done',
-        ...(from ? { dateFrom: from } : {}),
-        ...(to   ? { dateTo: to }     : {}),
-      });
-      setItems(Array.isArray(data) ? data : []);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    const init = async () => {
-      try {
-        const docs = await doctorApi.getAll();
-        const me = docs.find((d: any) => d.userId === user?.id);
-        if (!me) { setLoading(false); return; }
-        setDoctorId(me.id);
-        await load(me.id, dateFrom, dateTo);
-      } catch { setLoading(false); }
-    };
-    if (user?.id) init();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
-
-  const handleFilter = () => {
-    if (doctorId) load(doctorId, dateFrom, dateTo);
-  };
-
-  const openDetail = async (id: number) => {
-    setDetailLoading(true);
-    setSelected(null);
-    try {
-      const r = await appointmentApi.getById(id);
-      setSelected(r ?? null);
-    } finally {
-      setDetailLoading(false);
-    }
-  };
 
   const displayed = items.filter(a =>
     !search ||
@@ -105,7 +40,7 @@ export default function HistoryPage() {
               <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
                 className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3a5c]/20" />
             </div>
-            <button onClick={handleFilter}
+            <button onClick={applyFilter}
               className="px-5 py-2 bg-[#1a3a5c] text-white rounded-xl font-bold text-sm hover:bg-[#0f2540] transition-all">
               Lọc
             </button>
@@ -184,7 +119,7 @@ export default function HistoryPage() {
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden sticky top-6">
               <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
                 <h2 className="font-bold text-sm">Chi tiết hồ sơ bệnh án</h2>
-                <button onClick={() => setSelected(null)} className="p-1.5 rounded-full hover:bg-gray-100 text-gray-400">
+                <button onClick={closeDetail} className="p-1.5 rounded-full hover:bg-gray-100 text-gray-400">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
@@ -210,30 +145,30 @@ export default function HistoryPage() {
                     </div>
                   </div>
 
-                  {selected.medicalRecord ? (
+                  {selectedRecord ? (
                     <>
                       {/* Medical record */}
                       <div className="space-y-2">
                         <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Hồ sơ bệnh án</div>
                         <div className="bg-gray-50 rounded-xl p-3 space-y-1.5 text-sm">
-                          {selected.medicalRecord.symptoms      && <Row label="Triệu chứng"    value={selected.medicalRecord.symptoms} />}
-                          {selected.medicalRecord.skinType      && <Row label="Loại da"        value={selected.medicalRecord.skinType} />}
-                          {selected.medicalRecord.lesionLocation && <Row label="Vị trí tổn thương" value={selected.medicalRecord.lesionLocation} />}
-                          {selected.medicalRecord.diagnosis     && <Row label="Chẩn đoán"      value={selected.medicalRecord.diagnosis} />}
-                          {selected.medicalRecord.treatment     && <Row label="Điều trị"       value={selected.medicalRecord.treatment} />}
-                          {selected.medicalRecord.note          && <Row label="Ghi chú"        value={selected.medicalRecord.note} />}
-                          {selected.medicalRecord.followUpDate  && (
-                            <Row label="Tái khám" value={fmtDate(selected.medicalRecord.followUpDate)} />
+                          {selectedRecord.symptoms       && <Row label="Triệu chứng"    value={selectedRecord.symptoms} />}
+                          {selectedRecord.skinType       && <Row label="Loại da"        value={selectedRecord.skinType} />}
+                          {selectedRecord.lesionLocation && <Row label="Vị trí tổn thương" value={selectedRecord.lesionLocation} />}
+                          {selectedRecord.diagnosis      && <Row label="Chẩn đoán"      value={selectedRecord.diagnosis} />}
+                          {selectedRecord.treatment      && <Row label="Điều trị"       value={selectedRecord.treatment} />}
+                          {selectedRecord.note           && <Row label="Ghi chú"        value={selectedRecord.note} />}
+                          {selectedRecord.followUpDate   && (
+                            <Row label="Tái khám" value={fmtDate(selectedRecord.followUpDate)} />
                           )}
                         </div>
                       </div>
 
-                      {/* Prescription */}
-                      {selected.medicalRecord.prescription && selected.medicalRecord.prescription.items.length > 0 && (
+                      {/* Prescriptions */}
+                      {(selectedRecord.prescriptions ?? []).some(p => p.items.length > 0) && (
                         <div className="space-y-2">
                           <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Đơn thuốc</div>
                           <div className="space-y-1.5">
-                            {selected.medicalRecord.prescription.items.map((item, i) => (
+                            {(selectedRecord.prescriptions ?? []).flatMap(p => p.items).map((item, i) => (
                               <div key={i} className="bg-blue-50 rounded-xl p-3 text-sm">
                                 <div className="font-semibold text-gray-800">{item.medicineName}</div>
                                 <div className="text-xs text-gray-500 mt-0.5 space-y-0.5">
@@ -254,6 +189,16 @@ export default function HistoryPage() {
                       Chưa có hồ sơ bệnh án
                     </div>
                   )}
+
+                  {/* Sửa lại ca khám */}
+                  <Link
+                    to={`/doctor/examine/${selected.id}`}
+                    className="flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-[#1a3a5c] text-white rounded-xl font-bold text-sm hover:bg-[#0f2540] transition-all">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    {selectedRecord ? 'Sửa lại hồ sơ khám' : 'Lập hồ sơ khám'}
+                  </Link>
                 </div>
               )}
             </div>

@@ -2,7 +2,7 @@ package com.vietskin.backend_springboot.modules.rooms.controller;
 
 import com.vietskin.backend_springboot.common.response.ApiResponse;
 import com.vietskin.backend_springboot.modules.rooms.dto.CreateRoomRequest;
-import com.vietskin.backend_springboot.modules.rooms.entity.Room;
+import com.vietskin.backend_springboot.modules.rooms.dto.RoomResponse;
 import com.vietskin.backend_springboot.modules.rooms.service.RoomService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -21,25 +21,25 @@ public class RoomController {
     // Tất cả staff xem được
     @GetMapping
     @PreAuthorize("isAuthenticated()")
-    public ApiResponse<List<Room>> findAll() {
+    public ApiResponse<List<RoomResponse>> findAll() {
         return ApiResponse.ok(roomService.findAll());
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("isAuthenticated()")
-    public ApiResponse<Room> findOne(@PathVariable Integer id) {
+    public ApiResponse<RoomResponse> findOne(@PathVariable Integer id) {
         return ApiResponse.ok(roomService.findOne(id));
     }
 
     @PostMapping
     @PreAuthorize("hasRole('admin')")
-    public ApiResponse<Room> create(@Valid @RequestBody CreateRoomRequest req) {
+    public ApiResponse<RoomResponse> create(@Valid @RequestBody CreateRoomRequest req) {
         return ApiResponse.ok(roomService.create(req));
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('admin')")
-    public ApiResponse<Room> update(
+    public ApiResponse<RoomResponse> update(
             @PathVariable Integer id,
             @Valid @RequestBody CreateRoomRequest req) {
         return ApiResponse.ok(roomService.update(id, req));
@@ -48,13 +48,13 @@ public class RoomController {
     // Bật / tắt phòng — endpoint riêng nên không vướng validation @NotBlank của name
     @PutMapping("/{id}/toggle-active")
     @PreAuthorize("hasRole('admin')")
-    public ApiResponse<Room> toggleActive(@PathVariable Integer id) {
+    public ApiResponse<RoomResponse> toggleActive(@PathVariable Integer id) {
         return ApiResponse.ok(roomService.toggleActive(id));
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('admin')")
-    public ApiResponse<Room> remove(@PathVariable Integer id) {
+    public ApiResponse<RoomResponse> remove(@PathVariable Integer id) {
         return ApiResponse.ok(roomService.remove(id));
     }
 }

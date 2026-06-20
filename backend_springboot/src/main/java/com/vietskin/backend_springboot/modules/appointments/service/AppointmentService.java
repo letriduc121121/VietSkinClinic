@@ -2,44 +2,71 @@ package com.vietskin.backend_springboot.modules.appointments.service;
 
 import com.vietskin.backend_springboot.common.enums.AppointmentStatus;
 import com.vietskin.backend_springboot.common.exception.AppException;
+import com.vietskin.backend_springboot.common.utils.SecurityUtils;
+import com.vietskin.backend_springboot.modules.appointments.dto.AppointmentFlat;
+import com.vietskin.backend_springboot.modules.appointments.dto.AppointmentResponse;
 import com.vietskin.backend_springboot.modules.appointments.dto.CreateAppointmentRequest;
 import com.vietskin.backend_springboot.modules.appointments.dto.UpdateStatusRequest;
 import com.vietskin.backend_springboot.modules.appointments.entity.Appointment;
+import com.vietskin.backend_springboot.modules.appointments.mapper.AppointmentMapper;
 import com.vietskin.backend_springboot.modules.appointments.repository.AppointmentRepository;
 import com.vietskin.backend_springboot.common.websocket.AppWebSocketHandler;
 import com.vietskin.backend_springboot.modules.doctor_work_days.repository.DoctorWorkDayRepository;
 import com.vietskin.backend_springboot.modules.doctors.entity.Doctor;
+import com.vietskin.backend_springboot.modules.invoices.service.InvoiceService;
 import com.vietskin.backend_springboot.modules.notifications.service.NotificationService;
 import com.vietskin.backend_springboot.modules.specialties.entity.Service;
-import com.vietskin.backend_springboot.modules.invoices.entity.Invoice;
-import com.vietskin.backend_springboot.modules.invoices.repository.InvoiceRepository;
-import com.vietskin.backend_springboot.common.enums.PaymentStatus;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
-import java.text.NumberFormat;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 
 @Component("appointmentService")
 @RequiredArgsConstructor
+@Slf4j
 public class AppointmentService {
 
     private final AppointmentRepository appointmentRepository;
     private final DoctorWorkDayRepository doctorWorkDayRepository;
     private final AppWebSocketHandler wsHandler;
     private final NotificationService notificationService;
-    private final InvoiceRepository invoiceRepository;
+    private final InvoiceService invoiceService;
 
     private static final DateTimeFormatter VN_DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    private static final DateTimeFormatter HH_MM = DateTimeFormatter.ofPattern("HH:mm");
+
+    /** Có lịch hẹn còn hiệu lực (không cancelled/no_show) trùng khung giờ của bác sĩ không. */
+    private boolean hasSlotConflict(Integer doctorId, LocalDate date, String time) {
+        return appointmentRepository.findByDoctorIdAndDate(doctorId, date).stream()
+                .anyMatch(a -> time.equals(a.getTime())
+                        && a.getStatus() != AppointmentStatus.cancelled
+                        && a.getStatus() != AppointmentStatus.no_show);
+    }
+
+    /** Các trạng thái đã được tính vào hàng chờ (đã/đang/đã xong khám) → dùng để cấp STT tiếp theo. */
+    private static final EnumSet<AppointmentStatus> QUEUE_COUNTED_STATUSES = EnumSet.of(
+            AppointmentStatus.checked_in, AppointmentStatus.in_progress, AppointmentStatus.done);
+
+    /**
+     * STT kế tiếp cho bác sĩ trong ngày = số lịch đã vào hàng chờ + 1.
+     * PHẢI gọi sau khi đã giữ khóa {@code lockByDoctorIdAndDate} để không bị trùng STT khi chạy đồng thời.
+     */
+    private int nextQueueNumber(Integer doctorId, LocalDate date) {
+        long count = appointmentRepository.findByDoctorIdAndDate(doctorId, date).stream()
+                .filter(a -> QUEUE_COUNTED_STATUSES.contains(a.getStatus()))
+                .count();
+        return (int) count + 1;
+    }
 
     // Các transition hợp lệ — giống NestJS
     private static final Map<String, List<String>> VALID_TRANSITIONS = Map.of(
@@ -55,33 +82,38 @@ public class AppointmentService {
     // ── Đặt lịch ────────────────────────────────────────────
     @Transactional
     @CacheEvict(value = "appointments_list", allEntries = true)
-    public Appointment create(CreateAppointmentRequest req, Integer userId) {
+    public AppointmentResponse create(CreateAppointmentRequest req, Integer userId) {
         boolean isWalkin = Boolean.TRUE.equals(req.getIsWalkin());
 
-        // Giờ khám — walk-in dùng giờ hiện tại nếu không truyền
-        String appointmentTime = req.getTime();
-        if (appointmentTime == null) {
-            appointmentTime = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"));
+        // Giờ khám — walk-in xếp hàng theo STT nên dùng giờ hiện tại nếu không truyền giờ cụ thể
+        boolean hasExplicitTime = req.getTime() != null;
+        String appointmentTime = hasExplicitTime
+                ? req.getTime()
+                : LocalTime.now().format(HH_MM);
+        final String finalTime = appointmentTime;
+
+        // Không cho đặt lịch vào quá khứ
+        LocalDate today = LocalDate.now();
+        if (req.getDate().isBefore(today)) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Không thể đặt lịch cho ngày trong quá khứ");
+        }
+        if (req.getDate().isEqual(today) && finalTime.compareTo(LocalTime.now().format(HH_MM)) < 0) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Không thể đặt lịch cho thời điểm đã qua trong ngày");
         }
 
-        // Kiểm tra bác sĩ có lịch làm việc ngày này không (cả walk-in lẫn online)
-        if (!doctorWorkDayRepository.existsByDoctorIdAndDate(req.getDoctorId(), req.getDate())) {
+        // Khóa ghi dòng lịch làm việc của bác sĩ trong ngày: vừa kiểm tra bác sĩ có làm việc ngày đó,
+        // vừa serialize các request đặt lịch đồng thời cho cùng (bác sĩ, ngày) → chống double-booking
+        // và trùng STT. Khóa được giữ tới khi transaction commit nên check-trùng + lưu là một thể thống nhất.
+        if (doctorWorkDayRepository.lockByDoctorIdAndDate(req.getDoctorId(), req.getDate()).isEmpty()) {
             throw new AppException(HttpStatus.BAD_REQUEST,
                     "Bác sĩ không có lịch làm việc vào ngày " + req.getDate()
                     + ". Vui lòng chọn bác sĩ khác hoặc ngày khác.");
         }
 
-        // Chỉ check conflict slot cho online booking
-        final String finalTime = appointmentTime;
-        if (!isWalkin) {
-            boolean conflict = appointmentRepository
-                    .findByDoctorIdAndDate(req.getDoctorId(), req.getDate())
-                    .stream()
-                    .anyMatch(a -> finalTime.equals(a.getTime())
-                            && a.getStatus() != AppointmentStatus.cancelled
-                            && a.getStatus() != AppointmentStatus.no_show);
-            if (conflict)
-                throw new AppException(HttpStatus.BAD_REQUEST, "Khung giờ này đã có người đặt");
+        // Check trùng khung giờ khi có giờ cụ thể (online booking, hoặc walk-in được chọn giờ).
+        // Walk-in không chọn giờ thì xếp theo STT nên không tính là trùng.
+        if (hasExplicitTime && hasSlotConflict(req.getDoctorId(), req.getDate(), finalTime)) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Khung giờ này đã có người đặt");
         }
 
         // Walk-in: cấp STT ngay
@@ -91,17 +123,19 @@ public class AppointmentService {
                 : AppointmentStatus.pending;
 
         if (isWalkin) {
-            long count = appointmentRepository.findByDoctorIdAndDate(req.getDoctorId(), req.getDate())
-                    .stream()
-                    .filter(a -> a.getStatus() == AppointmentStatus.checked_in
-                            || a.getStatus() == AppointmentStatus.in_progress
-                            || a.getStatus() == AppointmentStatus.done)
-                    .count();
-            queueNumber = (int) count + 1;
+            // An toàn nhờ khóa lịch làm việc đã giữ ở trên → không bị trùng STT khi đăng ký đồng thời
+            queueNumber = nextQueueNumber(req.getDoctorId(), req.getDate());
         }
 
-        // Resolve patientId
-        Integer patientId = req.getPatientId() != null ? req.getPatientId() : userId;
+        // Resolve patientId.
+        // Bệnh nhân chỉ được đặt lịch cho CHÍNH MÌNH — bỏ qua patientId gửi lên (chống đặt lịch hộ/mạo danh).
+        // Lễ tân/admin mới được đặt hộ bằng patientId trong request.
+        Integer patientId;
+        if (SecurityUtils.hasRole("patient")) {
+            patientId = userId;
+        } else {
+            patientId = req.getPatientId() != null ? req.getPatientId() : userId;
+        }
 
         Appointment apt = new Appointment();
         apt.setPatientName(req.getPatientName());
@@ -140,33 +174,53 @@ public class AppointmentService {
             wsHandler.publishToDoctor(saved.getDoctor().getId(), "queue_updated",
                     Map.of("doctorId", saved.getDoctor().getId()));
         }
-        return saved;
+        // Nạp lại bằng projection để trả response đầy đủ (doctor/service/patient...)
+        return responseById(saved.getId());
+    }
+
+    /** Lấy AppointmentResponse theo id qua projection (dùng sau create/update/cancel). */
+    private AppointmentResponse responseById(Integer id) {
+        return appointmentRepository.findFlatById(id)
+                .map(AppointmentMapper::toResponse)
+                .orElse(null);
     }
 
     // ── Lễ tân/Admin xem tất cả (có filter) ─────────────────
     // Cache theo bộ lọc (SimpleKey gộp cả 5 tham số). TTL ngắn 30s + evict khi có
     // đặt/đổi trạng thái/hủy để lễ tân luôn thấy danh sách mới nhất.
     @Cacheable("appointments_list")
-    public List<Appointment> findAll(String date, String dateFrom, String dateTo,
-                                     Integer doctorId, String status) {
-        List<Appointment> all = appointmentRepository.findAll();
-
-        return all.stream()
-                .filter(a -> date == null || a.getDate().equals(LocalDate.parse(date)))
-                .filter(a -> dateFrom == null || !a.getDate().isBefore(LocalDate.parse(dateFrom)))
-                .filter(a -> dateTo == null || !a.getDate().isAfter(LocalDate.parse(dateTo)))
-                .filter(a -> doctorId == null || a.getDoctor().getId().equals(doctorId))
-                .filter(a -> status == null || a.getStatus().name().equals(status))
-                .sorted(Comparator.comparing(Appointment::getDate).reversed()
-                        .thenComparing(Appointment::getTime, Comparator.reverseOrder()))
-                .toList();
+    public List<AppointmentResponse> findAll(String date, String dateFrom, String dateTo,
+                                             Integer doctorId, String status) {
+        try {
+            // "date" lọc đúng 1 ngày; nếu không có thì dùng khoảng dateFrom..dateTo
+            LocalDate from = date != null ? LocalDate.parse(date)
+                    : (dateFrom != null ? LocalDate.parse(dateFrom) : null);
+            LocalDate to = date != null ? LocalDate.parse(date)
+                    : (dateTo != null ? LocalDate.parse(dateTo) : null);
+            AppointmentStatus st = status != null ? AppointmentStatus.valueOf(status) : null;
+            // Lọc + sắp xếp + projection thẳng sang DTO tại DB (1 query, tránh tải cả bảng về RAM, tránh N+1)
+            return AppointmentMapper.toList(appointmentRepository.searchFlat(from, to, doctorId, st));
+        } catch (DateTimeParseException | IllegalArgumentException e) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Tham số lọc không hợp lệ");
+        }
     }
 
-    // ── Chi tiết 1 lịch hẹn ─────────────────────────────────
+    // ── Chi tiết 1 lịch hẹn (entity, dùng nội bộ cho update/cancel + kiểm tra IDOR) ──
     public Appointment findOne(Integer id) {
-        return appointmentRepository.findById(id)
+        Appointment apt = appointmentRepository.findById(id)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND,
                         "Lịch hẹn không tồn tại"));
+        // Bệnh nhân chỉ được xem lịch hẹn của chính mình (chống IDOR)
+        SecurityUtils.requireSelfIfPatient(apt.getPatient() != null ? apt.getPatient().getId() : null);
+        return apt;
+    }
+
+    // ── Chi tiết 1 lịch hẹn (DTO, cho controller getById) ──
+    public AppointmentResponse getById(Integer id) {
+        AppointmentFlat f = appointmentRepository.findFlatById(id)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Lịch hẹn không tồn tại"));
+        SecurityUtils.requireSelfIfPatient(f.patientId());
+        return AppointmentMapper.toResponse(f);
     }
 
     // ── Slot đã đặt (public) ─────────────────────────────────
@@ -175,58 +229,59 @@ public class AppointmentService {
     }
 
     // ── Bệnh nhân xem lịch của mình ─────────────────────────
-    public List<Appointment> findByPatient(Integer patientId) {
-        return appointmentRepository.findByPatientId(patientId)
-                .stream()
-                .sorted(Comparator.comparing(Appointment::getDate).reversed())
-                .toList();
+    public List<AppointmentResponse> findByPatient(Integer patientId) {
+        // Query đã ORDER BY date DESC
+        return AppointmentMapper.toList(appointmentRepository.findFlatByPatientId(patientId));
     }
 
     // ── Lễ tân tra cứu bệnh nhân qua SĐT ───────────────────
     public Map<String, Object> lookupByPhone(String phone, String date) {
-        List<Appointment> appointments = appointmentRepository.findByPatientPhone(phone)
+        LocalDate filterDate = date != null ? LocalDate.parse(date) : null;
+        List<AppointmentResponse> appointments = appointmentRepository.findFlatByPatientPhone(phone)
                 .stream()
-                .filter(a -> a.getStatus() != AppointmentStatus.cancelled
-                        && a.getStatus() != AppointmentStatus.no_show)
-                .filter(a -> date == null || a.getDate().equals(LocalDate.parse(date)))
-                .sorted(Comparator.comparing(Appointment::getDate).reversed())
+                .filter(a -> a.status() != AppointmentStatus.cancelled
+                        && a.status() != AppointmentStatus.no_show)
+                .filter(a -> filterDate == null || a.date().equals(filterDate))
+                .map(AppointmentMapper::toResponse)
                 .toList();
 
         return Map.of("appointments", appointments);
     }
 
     // ── Hàng chờ (checked_in + in_progress) ─────────────────
-    public List<Appointment> findQueue(Integer doctorId, String date) {
+    public List<AppointmentResponse> findQueue(Integer doctorId, String date) {
         LocalDate targetDate = date != null ? LocalDate.parse(date) : LocalDate.now();
 
-        return appointmentRepository.findByDoctorIdAndDate(doctorId, targetDate)
+        return appointmentRepository.findFlatByDoctorIdAndDate(doctorId, targetDate)
                 .stream()
-                .filter(a -> a.getStatus() == AppointmentStatus.checked_in
-                        || a.getStatus() == AppointmentStatus.in_progress)
-                .sorted(Comparator.comparing(a -> a.getQueueNumber() != null
-                        ? a.getQueueNumber() : Integer.MAX_VALUE))
+                .filter(a -> a.status() == AppointmentStatus.checked_in
+                        || a.status() == AppointmentStatus.in_progress)
+                .sorted(Comparator.comparing(a -> a.queueNumber() != null
+                        ? a.queueNumber() : Integer.MAX_VALUE))
+                .map(AppointmentMapper::toResponse)
                 .toList();
     }
 
     // ── Lịch ngày (toàn bộ confirmed/checked_in/done) ───────
-    public List<Appointment> findDaySchedule(Integer doctorId, String date) {
+    public List<AppointmentResponse> findDaySchedule(Integer doctorId, String date) {
         LocalDate targetDate = date != null ? LocalDate.parse(date) : LocalDate.now();
 
-        return appointmentRepository.findByDoctorIdAndDate(doctorId, targetDate)
+        return appointmentRepository.findFlatByDoctorIdAndDate(doctorId, targetDate)
                 .stream()
-                .filter(a -> a.getStatus() == AppointmentStatus.confirmed
-                        || a.getStatus() == AppointmentStatus.checked_in
-                        || a.getStatus() == AppointmentStatus.in_progress
-                        || a.getStatus() == AppointmentStatus.done)
-                .sorted(Comparator.comparing(a -> a.getQueueNumber() != null
-                        ? a.getQueueNumber() : Integer.MAX_VALUE))
+                .filter(a -> a.status() == AppointmentStatus.confirmed
+                        || a.status() == AppointmentStatus.checked_in
+                        || a.status() == AppointmentStatus.in_progress
+                        || a.status() == AppointmentStatus.done)
+                .sorted(Comparator.comparing(a -> a.queueNumber() != null
+                        ? a.queueNumber() : Integer.MAX_VALUE))
+                .map(AppointmentMapper::toResponse)
                 .toList();
     }
 
     // ── Cập nhật trạng thái ──────────────────────────────────
     @Transactional
     @CacheEvict(value = "appointments_list", allEntries = true)
-    public Appointment updateStatus(Integer id, UpdateStatusRequest req, Integer currentUserId) {
+    public AppointmentResponse updateStatus(Integer id, UpdateStatusRequest req, Integer currentUserId) {
         Appointment apt = findOne(id);
 
         // Kiểm tra transition hợp lệ
@@ -249,14 +304,9 @@ public class AppointmentService {
 
         // Cấp STT khi check-in (nếu chưa có)
         if ("checked_in".equals(req.getStatus()) && apt.getQueueNumber() == null) {
-            long count = appointmentRepository
-                    .findByDoctorIdAndDate(apt.getDoctor().getId(), apt.getDate())
-                    .stream()
-                    .filter(a -> a.getStatus() == AppointmentStatus.checked_in
-                            || a.getStatus() == AppointmentStatus.in_progress
-                            || a.getStatus() == AppointmentStatus.done)
-                    .count();
-            apt.setQueueNumber((int) count + 1);
+            // Khóa lịch làm việc để hai lần check-in đồng thời (cùng bác sĩ/ngày) không cấp trùng STT
+            doctorWorkDayRepository.lockByDoctorIdAndDate(apt.getDoctor().getId(), apt.getDate());
+            apt.setQueueNumber(nextQueueNumber(apt.getDoctor().getId(), apt.getDate()));
         }
 
         apt.setStatus(AppointmentStatus.valueOf(req.getStatus()));
@@ -310,7 +360,14 @@ public class AppointmentService {
 
         // Thông báo lễ tân khi khám xong để thu tiền
         if ("done".equals(req.getStatus())) {
-            createUnpaidInvoiceForAppointment(saved);
+            try {
+                invoiceService.createUnpaidForAppointment(saved);
+            } catch (Exception e) {
+                // Không làm hỏng việc cập nhật trạng thái lịch hẹn, nhưng phải log để lễ tân/dev biết
+                // (ca khám done mà thiếu hóa đơn → cần tạo thủ công khi thu tiền)
+                log.error("Không tạo được hóa đơn cho appointment id={} sau khi khám xong: {}",
+                        saved.getId(), e.getMessage(), e);
+            }
             try {
                 String patientName = (saved.getPatientName() != null && !saved.getPatientName().isBlank())
                         ? saved.getPatientName()
@@ -327,68 +384,14 @@ public class AppointmentService {
             }
         }
 
-        return saved;
-    }
-
-    private void createUnpaidInvoiceForAppointment(Appointment apt) {
-        try {
-            // Tránh tạo trùng lặp
-            if (invoiceRepository.findByAppointmentId(apt.getId()).isPresent()) {
-                return;
-            }
-
-            long count = invoiceRepository.count();
-            String invoiceCode = String.format("INV-%d-%04d", LocalDateTime.now().getYear(), count + 1);
-
-            BigDecimal consultationFee = apt.getDoctor() != null && apt.getDoctor().getConsultationFee() != null
-                    ? apt.getDoctor().getConsultationFee()
-                    : BigDecimal.valueOf(150000);
-            BigDecimal servicePrice = apt.getService() != null && apt.getService().getPrice() != null
-                    ? apt.getService().getPrice()
-                    : BigDecimal.ZERO;
-            BigDecimal amount = consultationFee.add(servicePrice);
-
-            String doctorName = apt.getDoctor() != null && apt.getDoctor().getUser() != null
-                    ? apt.getDoctor().getUser().getName() : "Bác sĩ";
-            StringBuilder desc = new StringBuilder("Phí khám - BS. ").append(doctorName);
-            if (apt.getService() != null) {
-                desc.append(" | Dịch vụ: ").append(apt.getService().getName());
-            }
-
-            Invoice invoice = Invoice.builder()
-                    .invoiceCode(invoiceCode)
-                    .appointment(apt)
-                    .patient(apt.getPatient())
-                    .patientName(apt.getPatientName())
-                    .description(desc.toString())
-                    .amount(amount)
-                    .status(PaymentStatus.unpaid)
-                    .method(null)
-                    .paidAt(null)
-                    .receivedBy(null)
-                    .note(null)
-                    .build();
-
-            invoiceRepository.save(invoice);
-
-            if (apt.getPatient() != null) {
-                String amountStr = NumberFormat.getNumberInstance(new Locale("vi", "VN"))
-                        .format(amount.longValue()) + "đ";
-                notificationService.notifyUser(
-                        apt.getPatient().getId(), "appointment",
-                        "Yêu cầu thanh toán phí khám",
-                        "Lượt khám của bạn đã hoàn tất. Vui lòng thanh toán số tiền " + amountStr + " tại quầy lễ tân."
-                );
-            }
-        } catch (Exception ignored) {
-            // Không phá vỡ transaction chính
-        }
+        return responseById(saved.getId());
     }
 
     // ── Hủy lịch ────────────────────────────────────────────
     @Transactional
     @CacheEvict(value = "appointments_list", allEntries = true)
-    public Appointment cancel(Integer id) {
+    public AppointmentResponse cancel(Integer id) {
+        // findOne đã chặn bệnh nhân hủy lịch của người khác (IDOR)
         Appointment apt = findOne(id);
 
         if (apt.getStatus() == AppointmentStatus.done
@@ -429,6 +432,6 @@ public class AppointmentService {
             } catch (Exception ignored) {}
         }
 
-        return saved;
+        return responseById(saved.getId());
     }
 }

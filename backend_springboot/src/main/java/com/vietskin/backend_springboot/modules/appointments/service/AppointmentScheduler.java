@@ -4,6 +4,8 @@ import com.vietskin.backend_springboot.common.enums.AppointmentStatus;
 import com.vietskin.backend_springboot.common.websocket.AppWebSocketHandler;
 import com.vietskin.backend_springboot.modules.appointments.entity.Appointment;
 import com.vietskin.backend_springboot.modules.appointments.repository.AppointmentRepository;
+import com.vietskin.backend_springboot.modules.medical_records.entity.MedicalRecord;
+import com.vietskin.backend_springboot.modules.medical_records.repository.MedicalRecordRepository;
 import com.vietskin.backend_springboot.modules.notifications.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +29,7 @@ import java.util.Map;
 public class AppointmentScheduler {
 
     private final AppointmentRepository appointmentRepository;
+    private final MedicalRecordRepository medicalRecordRepository;
     private final AppWebSocketHandler wsHandler;
     private final NotificationService notificationService;
 
@@ -142,6 +145,48 @@ public class AppointmentScheduler {
                 log.info("[Scheduler] Đã nhắc lịch bệnh nhân #{} ({})", apt.getPatient().getId(), apt.getPatientName());
             } catch (Exception e) {
                 log.warn("[Scheduler] Lỗi khi nhắc lịch appointment #{}: {}", apt.getId(), e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * Nhóm C — Nhắc tái khám, chạy lúc 20:00 mỗi tối.
+     *
+     * Tìm các bệnh án có follow_up_date là ngày mai và có bệnh nhân (online booking).
+     * Bác sĩ đặt follow_up_date khi tạo/cập nhật bệnh án.
+     */
+    @Scheduled(cron = "0 0 20 * * *")
+    public void sendFollowUpReminders() {
+        LocalDate tomorrow = LocalDate.now().plusDays(1);
+
+        List<MedicalRecord> followUps = medicalRecordRepository
+                .findByFollowUpDateAndPatientIsNotNull(tomorrow);
+
+        if (followUps.isEmpty()) {
+            log.info("[Scheduler] Không có lịch tái khám nào cần nhắc ngày mai ({}).", tomorrow);
+            return;
+        }
+
+        log.info("[Scheduler] Gửi nhắc tái khám cho {} bệnh nhân ngày mai.", followUps.size());
+
+        String dateStr = tomorrow.format(VN_DATE);
+
+        for (MedicalRecord mr : followUps) {
+            try {
+                Integer patientId = mr.getPatient().getId();
+                notificationService.notifyUser(
+                        patientId, "reminder",
+                        "Nhắc lịch tái khám ngày mai",
+                        "Bạn có lịch tái khám vào ngày " + dateStr
+                                + " tại VietSkin. Vui lòng đến đúng hẹn của bác sĩ."
+                );
+
+                wsHandler.publishToPatient(patientId, "appointment_updated",
+                        Map.of("medicalRecordId", mr.getId(), "status", "follow_up_reminder"));
+
+                log.info("[Scheduler] Đã nhắc tái khám bệnh nhân #{}", patientId);
+            } catch (Exception e) {
+                log.warn("[Scheduler] Lỗi khi nhắc tái khám bệnh án #{}: {}", mr.getId(), e.getMessage());
             }
         }
     }

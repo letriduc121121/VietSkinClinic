@@ -1,10 +1,6 @@
-import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/app/providers/AuthProvider';
-import { appointmentApi } from '@/features/appointments/api/appointment.api';
-import { invoiceApi } from '@/features/invoices/api/invoice.api';
-import type { Appointment } from '@/features/appointments/types/appointment.types';
-import type { Invoice } from '@/features/invoices/types/invoice.types';
+import { useReceptionistDashboard } from '@/features/dashboard/hooks/useReceptionistDashboard';
 
 const STATUS_CFG: Record<string, { label: string; cls: string }> = {
   pending:     { label: 'Chờ xác nhận', cls: 'bg-amber-100 text-amber-700' },
@@ -20,37 +16,11 @@ const fmt = (iso: string) => {
   const d = new Date(iso);
   return `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`;
 };
-const todayISO = () => new Date().toISOString().slice(0,10);
 
 export default function ReceptionistDashboard() {
   const { user } = useAuth();
-  const [apts, setApts] = useState<Appointment[]>([]);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [confirming, setConfirming] = useState<number | null>(null);
-
-  const today = todayISO();
-  const todayLabel = new Date().toLocaleDateString('vi-VN', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
-
-  useEffect(() => {
-    Promise.all([
-      appointmentApi.getList({ date: today }),
-      invoiceApi.getAll({ date: today }),
-    ]).then(([apts, invs]) => {
-      setApts(apts);
-      setInvoices(invs);
-    }).finally(() => setLoading(false));
-  }, [today]);
-
-  const handleConfirm = async (id: number) => {
-    setConfirming(id);
-    try {
-      await appointmentApi.updateStatus(id, 'confirmed');
-      setApts(prev => prev.map(a => a.id === id ? { ...a, status: 'confirmed' } : a));
-    } finally {
-      setConfirming(null);
-    }
-  };
+  const { apts, invoices, loading, confirming, confirm: handleConfirm, today } = useReceptionistDashboard();
+  const todayLabel = new Date().toLocaleDateString('vi-VN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
   const totalRevenue = invoices.reduce((s, inv) => s + Number(inv.amount), 0);
   const byMethod = invoices.reduce((acc, inv) => {

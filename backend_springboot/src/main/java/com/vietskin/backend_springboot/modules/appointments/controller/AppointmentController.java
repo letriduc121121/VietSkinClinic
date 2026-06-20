@@ -2,9 +2,9 @@ package com.vietskin.backend_springboot.modules.appointments.controller;
 
 import com.vietskin.backend_springboot.common.annotation.CurrentUser;
 import com.vietskin.backend_springboot.common.response.ApiResponse;
+import com.vietskin.backend_springboot.modules.appointments.dto.AppointmentResponse;
 import com.vietskin.backend_springboot.modules.appointments.dto.CreateAppointmentRequest;
 import com.vietskin.backend_springboot.modules.appointments.dto.UpdateStatusRequest;
-import com.vietskin.backend_springboot.modules.appointments.entity.Appointment;
 import com.vietskin.backend_springboot.modules.appointments.service.AppointmentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -25,7 +25,7 @@ public class AppointmentController {
 
     // ── Đặt lịch (public hoặc đã login) ─────────────────────
     @PostMapping
-    public ApiResponse<Appointment> create(
+    public ApiResponse<AppointmentResponse> create(
             @Valid @RequestBody CreateAppointmentRequest req,
             @AuthenticationPrincipal UserDetails userDetails) {
         Integer userId = userDetails != null
@@ -44,7 +44,7 @@ public class AppointmentController {
     // ── Lễ tân/Admin/Bác sĩ xem tất cả ─────────────────────
     @GetMapping
     @PreAuthorize("hasAnyRole('admin', 'receptionist', 'doctor')")
-    public ApiResponse<List<Appointment>> findAll(
+    public ApiResponse<List<AppointmentResponse>> findAll(
             @RequestParam(required = false) String date,
             @RequestParam(required = false) String dateFrom,
             @RequestParam(required = false) String dateTo,
@@ -55,7 +55,7 @@ public class AppointmentController {
 
     // ── Bệnh nhân xem lịch của mình ─────────────────────────
     @GetMapping("/my")
-    public ApiResponse<List<Appointment>> findMy(
+    public ApiResponse<List<AppointmentResponse>> findMy(
             @CurrentUser UserDetails userDetails) {
         Integer userId = Integer.valueOf(userDetails.getUsername());
         return ApiResponse.ok(appointmentService.findByPatient(userId));
@@ -73,7 +73,7 @@ public class AppointmentController {
     // ── Hàng chờ (checked_in + in_progress) ─────────────────
     @GetMapping("/queue")
     @PreAuthorize("hasAnyRole('admin', 'receptionist', 'doctor')")
-    public ApiResponse<List<Appointment>> getQueue(
+    public ApiResponse<List<AppointmentResponse>> getQueue(
             @RequestParam Integer doctorId,
             @RequestParam(required = false) String date) {
         return ApiResponse.ok(appointmentService.findQueue(doctorId, date));
@@ -82,7 +82,7 @@ public class AppointmentController {
     // ── Lịch ngày (tổng quan) ────────────────────────────────
     @GetMapping("/schedule")
     @PreAuthorize("hasAnyRole('admin', 'receptionist', 'doctor')")
-    public ApiResponse<List<Appointment>> getDaySchedule(
+    public ApiResponse<List<AppointmentResponse>> getDaySchedule(
             @RequestParam Integer doctorId,
             @RequestParam(required = false) String date) {
         return ApiResponse.ok(appointmentService.findDaySchedule(doctorId, date));
@@ -91,21 +91,21 @@ public class AppointmentController {
     // ── Admin xem lịch sử 1 bệnh nhân ───────────────────────
     @GetMapping("/patient/{patientId}")
     @PreAuthorize("hasAnyRole('admin', 'receptionist')")
-    public ApiResponse<List<Appointment>> findByPatient(
+    public ApiResponse<List<AppointmentResponse>> findByPatient(
             @PathVariable Integer patientId) {
         return ApiResponse.ok(appointmentService.findByPatient(patientId));
     }
 
     // ── Chi tiết 1 lịch hẹn ─────────────────────────────────
     @GetMapping("/{id}")
-    public ApiResponse<Appointment> findOne(@PathVariable Integer id) {
-        return ApiResponse.ok(appointmentService.findOne(id));
+    public ApiResponse<AppointmentResponse> findOne(@PathVariable Integer id) {
+        return ApiResponse.ok(appointmentService.getById(id));
     }
 
     // ── Cập nhật trạng thái ──────────────────────────────────
     @PutMapping("/{id}/status")
     @PreAuthorize("hasAnyRole('admin', 'receptionist', 'doctor')")
-    public ApiResponse<Appointment> updateStatus(
+    public ApiResponse<AppointmentResponse> updateStatus(
             @PathVariable Integer id,
             @Valid @RequestBody UpdateStatusRequest req,
             @CurrentUser UserDetails userDetails) {
@@ -116,7 +116,7 @@ public class AppointmentController {
 
     // ── Hủy lịch ────────────────────────────────────────────
     @PutMapping("/{id}/cancel")
-    public ApiResponse<Appointment> cancel(@PathVariable Integer id) {
+    public ApiResponse<AppointmentResponse> cancel(@PathVariable Integer id) {
         return ApiResponse.ok(appointmentService.cancel(id));
     }
 }

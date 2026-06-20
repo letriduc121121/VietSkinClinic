@@ -2,10 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/app/providers/AuthProvider';
 import { imgSrc } from '@/shared/lib/utils';
-import { doctorApi } from '@/features/doctors/api/doctor.api';
-import { serviceApi } from '@/features/services/api/service.api';
-import type { Doctor } from '@/features/doctors/types/doctor.types';
-import type { Service } from '@/features/services/types/service.types';
+import { useLandingData } from '@/features/public/hooks/useLandingData';
 
 const roleRedirect: Record<string, string> = {
   patient:      '/patient/dashboard',
@@ -20,25 +17,12 @@ const LandingPage: React.FC = () => {
   const [menuOpen, setMenuOpen]         = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
-  const [doctors, setDoctors]   = useState<Doctor[]>([]);
-  const [doctorCount, setDoctorCount] = useState(0);
-  const [services, setServices] = useState<Service[]>([]);
-  
+  const { doctors, services, doctorCount } = useLandingData();
+
   const [currentServicePage, setCurrentServicePage] = useState(1);
   const [currentDoctorPage, setCurrentDoctorPage] = useState(1);
   const SERVICES_PER_PAGE = 6;
   const DOCTORS_PER_PAGE = 4;
-
-  useEffect(() => {
-    doctorApi.getAll().then(data => {
-      const list = Array.isArray(data) ? data : [];
-      setDoctors(list);             // lưu toàn bộ danh sách bác sĩ để thực hiện phân trang
-      setDoctorCount(list.length);  // nhưng đếm tổng để hiện ở mục thống kê
-    }).catch(() => {});
-    serviceApi.getAll().then(data => {
-      setServices(Array.isArray(data) ? data : []);
-    }).catch(() => {});
-  }, []);
 
   useEffect(() => {
     const fn = (e: MouseEvent) => {

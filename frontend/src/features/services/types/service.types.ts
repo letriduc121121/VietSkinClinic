@@ -18,3 +18,13 @@ export interface CreateServiceDto {
   imageUrl?: string;
   active?: boolean;
 }
+
+export interface ServiceForm {
+  name: string;
+  description: string;
+  price: string;
+  duration: string;
+  category: string;
+  imageUrl: string;
+  active: boolean;
+}

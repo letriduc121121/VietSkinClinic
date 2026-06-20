@@ -2,6 +2,7 @@ package com.vietskin.backend_springboot.modules.chatbot.service;
 
 import com.vietskin.backend_springboot.common.enums.ChatRole;
 import com.vietskin.backend_springboot.common.exception.AppException;
+import com.vietskin.backend_springboot.modules.chatbot.dto.ChatHistoryResponse;
 import com.vietskin.backend_springboot.modules.chatbot.dto.ChatRequest;
 import com.vietskin.backend_springboot.modules.chatbot.dto.ChatResponse;
 import com.vietskin.backend_springboot.modules.chatbot.entity.ChatConversation;
@@ -12,6 +13,7 @@ import com.vietskin.backend_springboot.modules.users.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -25,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.Consumer;
 
 @Slf4j
 @Service
@@ -34,86 +37,75 @@ public class ChatService {
     private final ChatConversationRepository conversationRepository;
     private final ChatMessageRepository messageRepository;
     private final UserRepository userRepository;
-    private final GroqClient groqClient;
+    private final AiClient aiClient;
     private final ChatTools chatTools;
 
     // Luồng riêng để chạy streaming (không chặn thread xử lý request)
     private final ExecutorService streamExecutor = Executors.newCachedThreadPool();
 
-    // Số tin nhắn gần nhất đưa vào prompt (giữ ngữ cảnh mà không quá dài)
-    private static final int MAX_HISTORY = 20;
+    // Số tin nhắn gần nhất đưa vào prompt (10 tin ≈ 5 lượt hỏi-đáp, đủ ngữ cảnh mà tiết kiệm token)
+    private static final int MAX_HISTORY = 10;
 
-    // Số bước gọi tool tối đa trong 1 lượt trả lời (tránh AI lặp vô hạn)
-    private static final int MAX_TOOL_STEPS = 2;
+    // Số bước gọi tool tối đa trong 1 lượt trả lời (3 bước để AI chain: list_doctors → suggest_slots → reply)
+    private static final int MAX_TOOL_STEPS = 3;
 
     // "Dạy" bot bằng System Prompt — KHÔNG phải training model.
     // Mô tả bám sát nghiệp vụ thật của website để bot hướng dẫn chính xác.
     private static final String SYSTEM_PROMPT = """
             # VAI TRÒ
-            Bạn là "Trợ lý VietSkin" — trợ lý ảo của phòng khám da liễu VietSkin.
-            Bạn hỗ trợ bệnh nhân/khách truy cập website: hướng dẫn đặt lịch khám,
-            tư vấn chọn dịch vụ phù hợp, giải đáp về bác sĩ, giờ làm việc, hóa đơn,
-            và các câu hỏi chăm sóc da phổ thông.
+            Bạn là "Trợ lý VietSkin" — trợ lý ảo tư vấn da liễu của phòng khám VietSkin.
+            Kiến thức vững về da liễu, chăm sóc da. Hỗ trợ đặt lịch, chọn dịch vụ, giải đáp bác sĩ/giờ/hóa đơn.
 
             # GIỌNG ĐIỆU
-            - Luôn trả lời bằng tiếng Việt, thân thiện, lịch sự, NGẮN GỌN, dễ hiểu.
-            - Khi hướng dẫn nhiều bước, trình bày bằng danh sách đánh số rõ ràng.
-            - Chủ động hỏi lại 1 câu để làm rõ nhu cầu nếu câu hỏi còn mơ hồ.
+            Tiếng Việt, thân thiện, súc tích. Ưu tiên gạch đầu dòng. Bám sát câu hỏi, không lan man.
 
-            # CÔNG CỤ TRA CỨU DỮ LIỆU (Tool Calling)
-            Bạn có các công cụ tra cứu DỮ LIỆU THẬT: dịch vụ & giá (search_services),
-            danh sách bác sĩ & phí khám (list_doctors), khung giờ trống của bác sĩ theo ngày
-            (check_availability), thông tin phòng khám (get_clinic_info), và — nếu khách ĐÃ ĐĂNG NHẬP —
-            lịch hẹn (get_my_appointments) & hóa đơn (get_my_invoices) cá nhân của họ.
-            Hãy CHỦ ĐỘNG gọi công cụ thay vì đoán số liệu.
-            ⚠️ QUAN TRỌNG: Kết quả công cụ sẽ được hiển thị cho khách dưới dạng THẺ (card) trực quan,
-            nên bạn KHÔNG cần liệt kê lại từng dòng dữ liệu trong câu trả lời. Chỉ viết 1–2 câu dẫn
-            NGẮN GỌN, thân thiện (vd: "Dạ đây là các dịch vụ phù hợp ạ:" hoặc
-            "Bác sĩ A ngày mai còn vài khung giờ trống nhé, bạn xem bên dưới:").
-            Nếu công cụ báo khách chưa đăng nhập, hãy lịch sự hướng dẫn họ đăng nhập bằng số điện thoại.
+            # TOOL CALLING (BẮT BUỘC)
+            Tools: search_services, list_doctors, check_availability, suggest_appointment_slots, get_clinic_info, get_my_appointments, get_my_invoices.
+            1. PHẢI gọi tool lấy dữ liệu thật, KHÔNG bịa số liệu/tên/giá/khung giờ.
+            2. KHÔNG viết placeholder {...} hay [...]. Viết ngôn ngữ tự nhiên.
+            3. Kết quả tool tự hiện THẺ trực quan KÈM nút "Đặt lịch". Bạn CHỈ viết câu dẫn NGẮN rồi DỪNG — KHÔNG liệt kê lại dữ liệu, KHÔNG viết "[Đặt lịch]" (nút có sẵn).
+            4. Nếu tool báo chưa đăng nhập → hướng dẫn đăng nhập bằng SĐT.
 
-            # THÔNG TIN PHÒNG KHÁM
-            - Giờ làm việc: 8:00–20:00 tất cả các ngày trong tuần.
-            - Chuyên khoa: Da liễu (điều trị mụn, nám, tàn nhang, chăm sóc & trẻ hóa da...).
-            - Đăng nhập/đăng ký bằng SỐ ĐIỆN THOẠI + mật khẩu (không dùng email/username).
+            # PHÒNG KHÁM
+            Địa chỉ: 175 Tây Sơn | Hotline: 1900 1234 | Giờ: 8:00–17:00 mỗi ngày | Chuyên khoa: Da liễu | Thanh toán: Tiền mặt, CK, Thẻ, QR | Đăng nhập bằng SĐT + mật khẩu.
 
-            # HƯỚNG DẪN ĐẶT LỊCH KHÁM ONLINE (luồng thật trên web)
-            Yêu cầu: bệnh nhân cần ĐĂNG NHẬP trước. Vào mục "Đặt lịch" rồi làm 3 bước:
-            1. Chọn bác sĩ — xem ảnh, học vị, chuyên khoa, kinh nghiệm và phí khám; có thể tìm theo tên/chuyên khoa.
-            2. Chọn ngày & giờ — hệ thống chỉ hiện các ngày bác sĩ có lịch làm việc và các khung giờ còn trống.
-            3. Chọn dịch vụ & xác nhận — chọn dịch vụ, mô tả triệu chứng, có thể tải ảnh vùng da tổn thương, rồi bấm Xác nhận.
-            Sau khi đặt: lịch ở trạng thái "Chờ xác nhận" (pending). Lễ tân duyệt sẽ chuyển sang "Đã xác nhận" (confirmed)
-            và cấp Số thứ tự khám. Khi đến khám, lễ tân check-in và lập hóa đơn.
+            # ĐẶT LỊCH ONLINE
+            Cần đăng nhập. 3 bước: Chọn bác sĩ → Chọn ngày & giờ trống → Chọn dịch vụ & xác nhận.
+            Sau đặt: "Chờ xác nhận" → lễ tân duyệt → "Đã xác nhận" + số thứ tự.
+            Bệnh nhân tự hủy được khi đang "Chờ xác nhận" hoặc "Đã xác nhận".
 
-            # QUẢN LÝ LỊCH HẸN
-            - Xem lịch của mình ở mục "Lịch hẹn", chia tab: Chờ xác nhận / Đã xác nhận / Đã khám xong / Đã hủy.
-            - Bệnh nhân CÓ THỂ tự hủy lịch khi đang ở trạng thái "Chờ xác nhận" hoặc "Đã xác nhận"
-              (bấm nút "Hủy lịch"). Lịch đã check-in/đang khám/đã xong thì không tự hủy được.
-            - Khách đến trực tiếp không đặt trước (walk-in): lễ tân tạo lịch tại quầy chỉ cần Tên + SĐT.
-              Nếu sau này khách đăng ký tài khoản bằng đúng SĐT đó, hệ thống tự liên kết lại lịch sử khám cũ.
+            # TRANG HỮU ÍCH
+            Bệnh án, Hóa đơn, Hồ sơ cá nhân — hướng dẫn khách vào xem khi cần.
 
-            # CÁC TRANG HỮU ÍCH (cho bệnh nhân đã đăng nhập)
-            - "Bệnh án": xem chẩn đoán, loại da, hướng điều trị, ảnh tổn thương và đơn thuốc các lần khám.
-            - "Hóa đơn": xem lịch sử thanh toán, trạng thái (đã/chưa thanh toán), tải hóa đơn PDF.
-            - "Hồ sơ": cập nhật thông tin cá nhân, tiền sử dị ứng/bệnh nền, đổi mật khẩu.
-            - Thanh toán hỗ trợ: tiền mặt, chuyển khoản, quẹt thẻ, mã QR.
+            # DA LIỄU
+            Giải đáp đầy đủ: mụn, nám, chàm, rosacea, nấm, vảy nến, rụng tóc, lão hóa, skincare...
+            Nêu nguyên nhân, dấu hiệu, cách chăm sóc phổ thông, khi nào nên khám.
+            Nếu mô tả mơ hồ → hỏi lại 1–2 câu (vị trí, thời gian, mức độ, tiền sử).
+            Trả lời: đồng cảm → giải thích → khuyên chăm sóc → gợi ý dịch vụ/đặt lịch.
 
-            # TƯ VẤN CHỌN DỊCH VỤ (định hướng, KHÔNG phải chẩn đoán)
-            - Có thể gợi ý hướng dịch vụ theo nhu cầu, ví dụ: da mụn → khám & điều trị mụn;
-              nám/tàn nhang/đốm nâu → dịch vụ laser/trị sắc tố; da xỉn, lão hóa → chăm sóc & trẻ hóa da.
-            - Luôn kèm lời khuyên nên đặt lịch để bác sĩ thăm khám trực tiếp và tư vấn chính xác.
+            # CHỦ ĐỘNG MỜI ĐẶT LỊCH (quan trọng)
+            1. Hỏi bác sĩ/bằng cấp/học vị → gọi list_doctors(keyword bằng cấp/tên) → giới thiệu BS phù hợp, nêu rõ bằng cấp (vd: Thạc sĩ, Bác sĩ chuyên khoa I, Tiến sĩ).
+            2. Mô tả triệu chứng/bệnh lý → phân tích sơ bộ → gọi list_doctors(keyword bệnh lý, ví dụ: 'mụn', 'nám', 'chàm') → đối chiếu và đề xuất bác sĩ có chuyên môn/keywords điều trị phù hợp nhất, kèm lý do đề xuất rõ ràng.
+            3. Muốn khám/đặt lịch → gọi suggest_appointment_slots → mời chọn khung giờ.
+               Nếu khách nêu GIỜ/BUỔI mong muốn, truyền tham số tương ứng (giờ khám 8:00–11:40 & 13:00–16:40):
+               - "lúc 15h"/"khoảng 16h" → preferred_time="15:00"/"16:00" (kết quả sắp theo độ gần mốc này).
+               - "từ 14h đến 17h" → time_from="14:00", time_to="17:00".
+               - "buổi sáng" → time_from="08:00", time_to="11:40"; "buổi chiều" → time_from="13:00", time_to="16:40".
+               - "hôm nay"/"chiều nay" → date=hôm nay (+ time_from theo buổi); "ngày mai" → date=ngày mai.
+               - "sau giờ làm"/"buổi tối": phòng khám đóng cửa 17:00, nhẹ nhàng báo và đề xuất khung giờ muộn nhất còn trống.
+               KHÔNG bao giờ trả lời cộc lốc "không có lịch" — luôn đề xuất các khung giờ GẦN NHẤT với yêu cầu.
+            4. Sau tư vấn → kết bằng lời mời đặt lịch nhẹ nhàng.
 
-            # GIỚI HẠN BẮT BUỘC
-            - KHÔNG chẩn đoán bệnh, KHÔNG kê đơn/khuyên dùng thuốc cụ thể, KHÔNG cam kết kết quả điều trị.
-            - Bạn KHÔNG thể tự đặt/hủy lịch hay truy cập dữ liệu cá nhân thay người dùng —
-              hãy HƯỚNG DẪN họ tự thao tác trên web theo các bước ở trên.
-            - Với triệu chứng nặng/cấp tính, khuyên bệnh nhân đặt lịch gặp bác sĩ ngay hoặc liên hệ lễ tân.
-            - Nếu không chắc một con số/thông tin cụ thể (giá, lịch trống của từng bác sĩ...),
-              hãy thành thật nói chưa nắm rõ và hướng dẫn xem trực tiếp trên web hoặc liên hệ lễ tân.
-            - Chỉ trả lời trong phạm vi phòng khám da liễu VietSkin; lịch sự từ chối câu hỏi ngoài lề.
+            # GIỚI HẠN
+            - KHÔNG chẩn đoán xác định, kê đơn, cam kết kết quả.
+            - KHÔNG tự đặt/hủy lịch thay bệnh nhân.
+            - Dấu hiệu cảnh báo (lan nhanh, sốt, mủ, nốt ruồi bất thường, dị ứng nặng) → khuyên khám sớm.
+            - Ngoài da liễu → lịch sự từ chối.
             """;
 
-    @Transactional
+    // KHÔNG bọc @Transactional ở đây: lời gọi AI (groqClient.chat) có thể mất nhiều giây.
+    // Mỗi repository.save() đã tự chạy trong transaction riêng, nên không giữ kết nối DB
+    // trong suốt thời gian chờ AI (tránh cạn connection pool khi nhiều người chat).
     public ChatResponse chat(ChatRequest req, Integer userId) {
         // 1. Lấy hoặc tạo cuộc hội thoại
         ChatConversation conv = resolveConversation(req, userId);
@@ -137,7 +129,7 @@ public class ChatService {
         }
 
         // 4. Gọi AI
-        String reply = groqClient.chat(messages);
+        String reply = aiClient.chat(messages);
 
         // 5. Lưu câu trả lời của bot
         ChatMessage botMsg = ChatMessage.builder()
@@ -160,7 +152,7 @@ public class ChatService {
 
     /** Khởi tạo SSE: lưu tin nhắn người dùng, gửi meta, rồi chạy AI ở luồng nền. */
     public SseEmitter streamChat(ChatRequest req, Integer userId) {
-        SseEmitter emitter = new SseEmitter(0L); // không timeout
+        SseEmitter emitter = new SseEmitter(120_000L); // timeout 2 phút, tránh giữ connection vô hạn
         Prepared prep = prepareStream(req, userId);
 
         try {
@@ -198,17 +190,23 @@ public class ChatService {
 
     /** Vòng lặp: gọi AI (có tool) tối đa MAX_TOOL_STEPS lần, rồi stream câu trả lời cuối. */
     private void runStream(Prepared prep, SseEmitter emitter) {
-        StringBuilder full = new StringBuilder();
+        DeltaSink sink = new DeltaSink(chunk -> {
+            try {
+                emitter.send(SseEmitter.event().name("delta").data(Map.of("content", chunk)));
+            } catch (IOException e) {
+                throw new RuntimeException(e); // hủy stream nếu client ngắt kết nối
+            }
+        });
         try {
             List<Map<String, Object>> messages = prep.messages();
             int toolRounds = 0;
 
             while (true) {
                 boolean allowTools = toolRounds < MAX_TOOL_STEPS;
-                GroqClient.StreamResult result = groqClient.streamCompletion(
+                AiClient.StreamResult result = aiClient.streamCompletion(
                         messages,
                         allowTools ? chatTools.definitions() : null,
-                        delta -> sendDelta(emitter, delta, full));
+                        sink::accept);
 
                 boolean wantsTool = allowTools
                         && result.toolCalls() != null && !result.toolCalls().isEmpty();
@@ -216,7 +214,7 @@ public class ChatService {
 
                 // AI yêu cầu gọi tool → thực thi rồi đưa kết quả lại cho AI
                 messages.add(buildAssistantToolEcho(result));
-                for (GroqClient.ToolCall tc : result.toolCalls()) {
+                for (AiClient.ToolCall tc : result.toolCalls()) {
                     ChatTools.ToolResult toolResult = chatTools.execute(tc.name(), tc.arguments(), prep.userId());
 
                     // JSON thô đưa lại cho model để nó viết câu dẫn
@@ -236,25 +234,28 @@ public class ChatService {
                 toolRounds++;
             }
 
+            sink.flush();
+
             // Fallback: thỉnh thoảng model trả completion rỗng khi bật tool.
             // Nếu chưa stream được chữ nào → ép gọi lần cuối KHÔNG tools để luôn có câu trả lời.
-            if (full.length() == 0) {
+            if (sink.length() == 0) {
                 log.warn("[chat] phản hồi rỗng sau vòng tool — gọi lại lần cuối không tool");
-                groqClient.streamCompletion(messages, null, delta -> sendDelta(emitter, delta, full));
+                aiClient.streamCompletion(messages, null, sink::accept);
+                sink.flush();
             }
         } catch (Exception e) {
             // Lỗi gọi AI (vd: 429 quá tải) → trả câu xin lỗi mượt mà thay vì để trống
             log.warn("[chat] lỗi gọi AI: {}", e.getMessage());
-            if (full.length() == 0) {
+            if (sink.length() == 0) {
                 String busy = "Xin lỗi, hệ thống đang bận. Bạn vui lòng thử lại sau giây lát nhé!";
                 safeSend(emitter, "delta", Map.of("content", busy));
-                full.append(busy);
+                sink.appendRaw(busy);
             }
         }
 
         // Luôn lưu + báo done + đóng (không completeWithError để tránh log lỗi servlet)
         try {
-            saveAssistantMessage(prep.conversationId(), full.toString());
+            saveAssistantMessage(prep.conversationId(), sink.text());
         } catch (Exception ignored) {
         }
         safeSend(emitter, "done", Map.of("conversationId", prep.conversationId()));
@@ -269,19 +270,68 @@ public class ChatService {
         }
     }
 
-    private void sendDelta(SseEmitter emitter, String delta, StringBuilder full) {
-        full.append(delta);
-        try {
-            emitter.send(SseEmitter.event().name("delta").data(Map.of("content", delta)));
-        } catch (IOException e) {
-            throw new RuntimeException(e); // hủy stream nếu client ngắt kết nối
+    /**
+     * Lọc các token placeholder {...} mà model đôi khi tự bịa (vd "{list_doctors}")
+     * trước khi stream về client. Giữ lại phần dư có dấu "{" chưa đóng để ghép với delta sau.
+     */
+    static final class DeltaSink {
+        private final Consumer<String> out;
+        private final StringBuilder full = new StringBuilder();
+        private final StringBuilder hold = new StringBuilder();
+
+        DeltaSink(Consumer<String> out) {
+            this.out = out;
+        }
+
+        void accept(String delta) {
+            if (delta == null || delta.isEmpty()) return;
+            hold.append(delta);
+            int open = hold.indexOf("{");
+            while (open >= 0) {
+                int close = hold.indexOf("}", open + 1);
+                if (close < 0) {
+                    emit(hold.substring(0, open));
+                    hold.delete(0, open);
+                    return;
+                }
+                emit(hold.substring(0, open));
+                String inner = hold.substring(open + 1, close).trim();
+                if (!inner.matches("[\\w\\s\\-]{1,50}")) emit(hold.substring(open, close + 1));
+                hold.delete(0, close + 1);
+                open = hold.indexOf("{");
+            }
+            emit(hold.toString());
+            hold.setLength(0);
+        }
+
+        void flush() {
+            emit(hold.toString());
+            hold.setLength(0);
+        }
+
+        void appendRaw(String text) {
+            full.append(text);
+        }
+
+        int length() {
+            return full.length() + hold.length();
+        }
+
+        String text() {
+            return full.toString();
+        }
+
+        private void emit(String s) {
+            if (s.isEmpty()) return;
+            full.append(s);
+            out.accept(s);
         }
     }
 
     /** Dựng lại message "assistant" chứa tool_calls để gửi kèm cho lượt gọi tiếp theo. */
-    private Map<String, Object> buildAssistantToolEcho(GroqClient.StreamResult result) {
+    private Map<String, Object> buildAssistantToolEcho(AiClient.StreamResult result) {
         List<Map<String, Object>> toolCalls = new ArrayList<>();
-        for (GroqClient.ToolCall tc : result.toolCalls()) {
+        for (AiClient.ToolCall tc : result.toolCalls()) {
             toolCalls.add(Map.of(
                     "id", tc.id(),
                     "type", "function",
@@ -307,13 +357,48 @@ public class ChatService {
         conversationRepository.save(conv);
     }
 
+    /**
+     * Lấy hội thoại của user trong NGÀY HÔM NAY để FE khôi phục sau khi reload.
+     * Đồng thời dọn các hội thoại cũ (từ ngày trước) của user này.
+     */
+    @Transactional
+    public ChatHistoryResponse getHistory(Integer userId) {
+        LocalDateTime startOfToday = LocalDate.now().atStartOfDay();
+        conversationRepository.deleteByUserIdAndUpdatedAtBefore(userId, startOfToday);
+
+        return conversationRepository.findByUserIdOrderByUpdatedAtDesc(userId).stream()
+                .findFirst()
+                .map(conv -> {
+                    List<ChatHistoryResponse.Message> messages = messageRepository
+                            .findByConversationIdOrderByIdAsc(conv.getId()).stream()
+                            .filter(m -> m.getCreatedAt() == null || !m.getCreatedAt().isBefore(startOfToday))
+                            .map(m -> new ChatHistoryResponse.Message(m.getRole().name(), m.getContent()))
+                            .toList();
+                    return new ChatHistoryResponse(conv.getId(), messages);
+                })
+                .orElse(new ChatHistoryResponse(null, List.of()));
+    }
+
+    /** Xóa toàn bộ lịch sử chat (user lẫn khách) cũ hơn ngày hôm nay — chạy 3h sáng mỗi ngày. */
+    @Scheduled(cron = "0 0 3 * * *")
+    @Transactional
+    public void cleanupOldConversations() {
+        conversationRepository.deleteByUpdatedAtBefore(LocalDate.now().atStartOfDay());
+        log.info("[chat] đã dọn lịch sử chat cũ hơn hôm nay");
+    }
+
     /** Holder: id hội thoại + danh sách message gửi cho AI + userId (null nếu khách chưa đăng nhập). */
     public record Prepared(Integer conversationId, List<Map<String, Object>> messages, Integer userId) {}
 
     private ChatConversation resolveConversation(ChatRequest req, Integer userId) {
         if (req.getConversationId() != null) {
-            return conversationRepository.findById(req.getConversationId())
-                    .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Cuộc hội thoại không tồn tại"));
+            // Chỉ dùng lại hội thoại nếu còn tồn tại VÀ thuộc ngày hôm nay; nếu không → tạo mới.
+            LocalDateTime startOfToday = LocalDate.now().atStartOfDay();
+            ChatConversation existing = conversationRepository.findById(req.getConversationId()).orElse(null);
+            if (existing != null && existing.getUpdatedAt() != null
+                    && !existing.getUpdatedAt().isBefore(startOfToday)) {
+                return existing;
+            }
         }
 
         // Tạo mới — tiêu đề = câu hỏi đầu tiên (cắt 80 ký tự)

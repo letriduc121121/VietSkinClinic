@@ -4,6 +4,7 @@ import {
   Banknote,
   CalendarCheck,
   CalendarClock,
+  CalendarPlus,
   MapPin,
   Phone,
   CreditCard,
@@ -13,11 +14,39 @@ import {
 } from 'lucide-react';
 import type { CardEvent } from '@/features/chatbot/api/chatbot.api';
 
+/** Yêu cầu đặt lịch phát ra từ thẻ — widget sẽ điều hướng tới trang đặt lịch. */
+export interface BookRequest {
+  doctorId?: number;
+  date?: string;
+  time?: string;
+}
+export type BookHandler = (req: BookRequest) => void;
+
 /** Định dạng tiền VND: 500000 → "500.000đ". */
 function vnd(value: unknown): string {
   const n = Number(value);
   if (!isFinite(n)) return '—';
   return n.toLocaleString('vi-VN') + 'đ';
+}
+
+/** Định dạng tên bác sĩ: Tránh bị trùng lặp "BS. BS." */
+function formatDoctorName(name?: string): string {
+  if (!name) return '';
+  const trimmed = name.trim();
+  if (/^(bs\.|bs|bác sĩ)\s+/i.test(trimmed)) {
+    return trimmed;
+  }
+  return `BS. ${trimmed}`;
+}
+
+/** Định dạng phòng khám: Tránh bị trùng lặp "Phòng Phòng khám" */
+function formatRoomName(room?: string): string {
+  if (!room) return '';
+  const trimmed = room.trim();
+  if (/^(phòng\s+khám|phòng|p\.)\s+/i.test(trimmed)) {
+    return trimmed;
+  }
+  return `Phòng ${trimmed}`;
 }
 
 // Nhãn + màu cho trạng thái lịch hẹn (khớp enum AppointmentStatus ở backend)
@@ -59,7 +88,19 @@ function EmptyHint({ text }: { text: string }) {
 /** Khối card chung — viền nhẹ, bo góc, nền trắng. */
 function Card({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-gray-100 bg-white p-3 shadow-sm">{children}</div>
+    <div className="w-full rounded-xl border border-gray-100 bg-white p-3 shadow-sm">{children}</div>
+  );
+}
+
+/** Nút "Đặt lịch" gắn trên thẻ — bấm sẽ điều hướng tới trang đặt lịch (đã chọn sẵn). */
+function BookButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#1a3a5c] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#245078]"
+    >
+      <CalendarPlus className="h-3.5 w-3.5" /> {label}
+    </button>
   );
 }
 
@@ -69,7 +110,7 @@ function ServicesCard({ data }: { data: any }) {
   const items: any[] = data?.dich_vu ?? [];
   if (!items.length) return <EmptyHint text="Chưa có dịch vụ phù hợp." />;
   return (
-    <div className="space-y-2">
+    <div className="space-y-2 w-full">
       {items.map((s, i) => (
         <Card key={i}>
           <div className="flex items-start justify-between gap-2">
@@ -88,48 +129,69 @@ function ServicesCard({ data }: { data: any }) {
   );
 }
 
-function DoctorsCard({ data }: { data: any }) {
+function DoctorsCard({ data, onBook }: { data: any; onBook?: BookHandler }) {
   const items: any[] = data?.bac_si ?? [];
   if (!items.length) return <EmptyHint text="Không tìm thấy bác sĩ phù hợp." />;
   return (
-    <div className="space-y-2">
-      {items.map((d, i) => (
-        <Card key={i}>
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-[#6EC1B4]/15 text-[#1a3a5c]">
-              <Stethoscope className="h-4.5 w-4.5" />
+    <div className="space-y-2 w-full">
+      {items.map((d, i) => {
+        const treats: string[] = Array.isArray(d.chuyen_tri) ? d.chuyen_tri : [];
+        return (
+          <Card key={i}>
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-[#6EC1B4]/15 text-[#1a3a5c]">
+                <Stethoscope className="h-4.5 w-4.5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-[#1a3a5c]">{formatDoctorName(d.ten_bac_si)}</p>
+                <p className="truncate text-[11px] text-gray-500">
+                  {[d.hoc_vi, d.chuyen_khoa, d.kinh_nghiem].filter(Boolean).join(' · ')}
+                </p>
+              </div>
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-[#1a3a5c]">{d.ten_bac_si}</p>
-              <p className="truncate text-[11px] text-gray-500">
-                {[d.hoc_vi, d.chuyen_khoa, d.kinh_nghiem].filter(Boolean).join(' · ')}
+            {d.mo_ta && <p className="mt-1.5 line-clamp-2 text-xs text-gray-500">{d.mo_ta}</p>}
+            {treats.length > 0 && (
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {treats.slice(0, 6).map((t, j) => (
+                  <span
+                    key={j}
+                    className="rounded-full bg-[#6EC1B4]/10 px-2 py-0.5 text-[10px] font-medium text-[#1a3a5c]"
+                  >
+                    {t}
+                  </span>
+                ))}
+              </div>
+            )}
+            {d.phi_kham_vnd != null && (
+              <p className="mt-2 flex items-center gap-1 text-xs text-gray-600">
+                <Banknote className="h-3.5 w-3.5 text-[#6EC1B4]" /> Phí khám:
+                <span className="font-semibold text-[#1a3a5c]">{vnd(d.phi_kham_vnd)}</span>
               </p>
-            </div>
-          </div>
-          {d.phi_kham_vnd != null && (
-            <p className="mt-2 flex items-center gap-1 text-xs text-gray-600">
-              <Banknote className="h-3.5 w-3.5 text-[#6EC1B4]" /> Phí khám:
-              <span className="font-semibold text-[#1a3a5c]">{vnd(d.phi_kham_vnd)}</span>
-            </p>
-          )}
-        </Card>
-      ))}
+            )}
+            {onBook && d.id != null && (
+              <BookButton label="Đặt lịch với bác sĩ này" onClick={() => onBook({ doctorId: d.id })} />
+            )}
+          </Card>
+        );
+      })}
     </div>
   );
 }
 
-function AvailabilityCard({ data }: { data: any }) {
+function AvailabilityCard({ data, onBook }: { data: any; onBook?: BookHandler }) {
   const slots: any[] = data?.slots ?? [];
   const free = slots.filter((s) => s.trong);
+  const doctorId = data?.bac_si_id;
+  const canBook = onBook && doctorId != null;
   return (
     <Card>
       <div className="flex items-center gap-2">
         <CalendarClock className="h-4 w-4 text-[#6EC1B4]" />
-        <p className="text-sm font-semibold text-[#1a3a5c]">{data?.ten_bac_si || 'Bác sĩ'}</p>
+        <p className="text-sm font-semibold text-[#1a3a5c]">{formatDoctorName(data?.ten_bac_si) || 'Bác sĩ'}</p>
       </div>
       <p className="mt-0.5 text-[11px] text-gray-500">
         Ngày {data?.ngay}
-        {data?.phong ? ` · Phòng ${data.phong}` : ''}
+        {data?.phong ? ` · ${formatRoomName(data.phong)}` : ''}
       </p>
       {!data?.co_lich_lam ? (
         <p className="mt-2 text-xs text-gray-400">Bác sĩ không có lịch làm việc ngày này.</p>
@@ -138,21 +200,69 @@ function AvailabilityCard({ data }: { data: any }) {
       ) : (
         <>
           <p className="mt-2 mb-1.5 text-[11px] text-gray-500">
-            Còn <b className="text-[#1a3a5c]">{free.length}</b> khung giờ trống:
+            Còn <b className="text-[#1a3a5c]">{free.length}</b> khung giờ trống
+            {canBook ? ' — bấm để đặt:' : ':'}
           </p>
           <div className="flex flex-wrap gap-1.5">
-            {free.map((s, i) => (
-              <span
-                key={i}
-                className="rounded-lg border border-[#6EC1B4]/40 bg-[#6EC1B4]/10 px-2 py-1 text-[11px] font-medium text-[#1a3a5c]"
-              >
-                {s.gio}
-              </span>
-            ))}
+            {free.map((s, i) =>
+              canBook ? (
+                <button
+                  key={i}
+                  onClick={() => onBook!({ doctorId, date: data.ngay, time: s.gio })}
+                  className="rounded-lg border border-[#6EC1B4]/40 bg-[#6EC1B4]/10 px-2 py-1 text-[11px] font-medium text-[#1a3a5c] transition-colors hover:bg-[#6EC1B4]/25"
+                >
+                  {s.gio}
+                </button>
+              ) : (
+                <span
+                  key={i}
+                  className="rounded-lg border border-[#6EC1B4]/40 bg-[#6EC1B4]/10 px-2 py-1 text-[11px] font-medium text-[#1a3a5c]"
+                >
+                  {s.gio}
+                </span>
+              ),
+            )}
           </div>
         </>
       )}
     </Card>
+  );
+}
+
+/** Thẻ gợi ý các khung giờ trống gần nhất của nhiều bác sĩ — mỗi dòng kèm nút đặt lịch. */
+function SlotSuggestionsCard({ data, onBook }: { data: any; onBook?: BookHandler }) {
+  const items: any[] = data?.goi_y ?? [];
+  if (!items.length)
+    return <EmptyHint text="Hiện chưa tìm thấy khung giờ trống trong những ngày tới." />;
+  return (
+    <div className="space-y-2 w-full">
+      {items.map((s, i) => (
+        <Card key={i}>
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <p className="flex items-center gap-1.5 text-sm font-semibold text-[#1a3a5c]">
+                <CalendarClock className="h-4 w-4 flex-shrink-0 text-[#6EC1B4]" />
+                {s.ngay} · {s.gio}
+              </p>
+              <p className="mt-0.5 truncate text-[11px] text-gray-500">
+                {[s.ten_bac_si && formatDoctorName(s.ten_bac_si), s.chuyen_khoa, s.phong && formatRoomName(s.phong)]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </p>
+            </div>
+            {s.phi_kham_vnd != null && (
+              <span className="whitespace-nowrap text-xs font-bold text-[#6EC1B4]">{vnd(s.phi_kham_vnd)}</span>
+            )}
+          </div>
+          {onBook && s.bac_si_id != null && (
+            <BookButton
+              label="Đặt lịch ngay"
+              onClick={() => onBook({ doctorId: s.bac_si_id, date: s.ngay, time: s.gio })}
+            />
+          )}
+        </Card>
+      ))}
+    </div>
   );
 }
 
@@ -194,7 +304,7 @@ function AppointmentsCard({ data }: { data: any }) {
   const items: any[] = data?.lich_hen ?? [];
   if (!items.length) return <EmptyHint text="Bạn chưa có lịch hẹn nào." />;
   return (
-    <div className="space-y-2">
+    <div className="space-y-2 w-full">
       {items.map((a, i) => {
         const st = APPT_STATUS[a.trang_thai] ?? { label: a.trang_thai, cls: 'bg-gray-100 text-gray-500' };
         return (
@@ -207,7 +317,7 @@ function AppointmentsCard({ data }: { data: any }) {
               <Badge label={st.label} cls={st.cls} />
             </div>
             <p className="mt-1.5 text-xs text-gray-600">
-              {[a.bac_si && `BS. ${a.bac_si}`, a.dich_vu].filter(Boolean).join(' · ') || 'Khám tư vấn'}
+              {[a.bac_si && formatDoctorName(a.bac_si), a.dich_vu].filter(Boolean).join(' · ') || 'Khám tư vấn'}
             </p>
             {a.so_thu_tu != null && (
               <p className="mt-1 text-[11px] text-gray-400">Số thứ tự: {a.so_thu_tu}</p>
@@ -223,7 +333,7 @@ function InvoicesCard({ data }: { data: any }) {
   const items: any[] = data?.hoa_don ?? [];
   if (!items.length) return <EmptyHint text="Bạn chưa có hóa đơn nào." />;
   return (
-    <div className="space-y-2">
+    <div className="space-y-2 w-full">
       {items.map((inv, i) => {
         const st = PAY_STATUS[inv.trang_thai] ?? { label: inv.trang_thai, cls: 'bg-gray-100 text-gray-500' };
         const paid = inv.trang_thai === 'paid';
@@ -258,17 +368,19 @@ function InvoicesCard({ data }: { data: any }) {
 }
 
 /** Bộ điều phối: chọn renderer theo card.type. */
-export default function ChatCards({ cards }: { cards: CardEvent[] }) {
+export default function ChatCards({ cards, onBook }: { cards: CardEvent[]; onBook?: BookHandler }) {
   return (
-    <div className="mt-2 space-y-2">
+    <div className="mt-2 space-y-2 w-full">
       {cards.map((card, i) => {
         switch (card.type) {
           case 'services':
             return <ServicesCard key={i} data={card.data} />;
           case 'doctors':
-            return <DoctorsCard key={i} data={card.data} />;
+            return <DoctorsCard key={i} data={card.data} onBook={onBook} />;
           case 'availability':
-            return <AvailabilityCard key={i} data={card.data} />;
+            return <AvailabilityCard key={i} data={card.data} onBook={onBook} />;
+          case 'slot_suggestions':
+            return <SlotSuggestionsCard key={i} data={card.data} onBook={onBook} />;
           case 'clinic':
             return <ClinicCard key={i} data={card.data} />;
           case 'appointments':

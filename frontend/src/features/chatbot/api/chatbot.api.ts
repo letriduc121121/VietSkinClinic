@@ -5,6 +5,7 @@ export type CardType =
   | 'services'
   | 'doctors'
   | 'availability'
+  | 'slot_suggestions'
   | 'clinic'
   | 'appointments'
   | 'invoices';
@@ -48,6 +49,21 @@ export async function sendChatMessage(
     guestId: getGuestId(),
   });
   return data.data as ChatReply;
+}
+
+export interface ChatHistory {
+  conversationId: number | null;
+  messages: ChatMessage[];
+}
+
+/** Lấy hội thoại gần nhất của user đang đăng nhập để khôi phục sau khi reload. */
+export async function fetchChatHistory(): Promise<ChatHistory> {
+  const { data } = await api.get('/chat/history');
+  const payload = data.data ?? { conversationId: null, messages: [] };
+  return {
+    conversationId: payload.conversationId ?? null,
+    messages: (payload.messages ?? []) as ChatMessage[],
+  };
 }
 
 export interface StreamHandlers {

@@ -42,9 +42,10 @@ const menuByRole: Record<string, MenuItem[]> = {
     { path: '/receptionist/profile',      label: 'Thông tin cá nhân',   icon: Icon.user      },
   ],
   doctor: [
-    { path: '/doctor/dashboard', label: 'Tổng quan',         icon: Icon.dashboard },
-    { path: '/doctor/today',     label: 'Lịch khám hôm nay', icon: Icon.calendar  },
-    { path: '/doctor/history',   label: 'Lịch sử ca khám',   icon: Icon.clipboard },
+    { path: '/doctor/dashboard',     label: 'Tổng quan',         icon: Icon.dashboard },
+    { path: '/doctor/today',         label: 'Lịch khám hôm nay', icon: Icon.calendar  },
+    { path: '/doctor/work-schedule', label: 'Lịch làm việc',     icon: Icon.calendar  },
+    { path: '/doctor/history',       label: 'Lịch sử ca khám',   icon: Icon.clipboard },
     { path: '/doctor/profile',   label: 'Thông tin cá nhân', icon: Icon.user      },
   ],
   admin: [
@@ -237,14 +238,14 @@ function DoctorNotificationBell() {
   useEffect(() => {
     if (!user?.id) return;
     doctorApi.getAll().then((docs: any[]) => {
-      const me = docs.find((d: any) => d.userId === user.id);
+      const me = docs.find((d: any) => (d.user?.id ?? d.userId) === user.id);
       if (me) setDoctorId(me.id);
     }).catch(() => {});
   }, [user?.id]);
 
   // Lắng nghe queue_updated trên topic của bác sĩ này
   useSocket(
-    (_event, payload: any) => {
+    (_event, _payload: any) => {
       // Mỗi lần hàng chờ thay đổi (check-in mới) → hiện thông báo
       setNotifs(prev => [{
         id:      nextId.current++,

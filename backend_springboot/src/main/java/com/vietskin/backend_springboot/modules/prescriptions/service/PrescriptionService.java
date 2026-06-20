@@ -1,6 +1,7 @@
 package com.vietskin.backend_springboot.modules.prescriptions.service;
 
 import com.vietskin.backend_springboot.common.exception.AppException;
+import com.vietskin.backend_springboot.common.utils.SecurityUtils;
 import com.vietskin.backend_springboot.common.websocket.AppWebSocketHandler;
 import com.vietskin.backend_springboot.modules.appointments.entity.Appointment;
 import com.vietskin.backend_springboot.modules.appointments.repository.AppointmentRepository;
@@ -12,8 +13,10 @@ import com.vietskin.backend_springboot.modules.medicines.repository.MedicineRepo
 import com.vietskin.backend_springboot.modules.notifications.service.NotificationService;
 import com.vietskin.backend_springboot.modules.prescriptions.dto.CreatePrescriptionRequest;
 import com.vietskin.backend_springboot.modules.prescriptions.dto.PrescriptionItemRequest;
+import com.vietskin.backend_springboot.modules.prescriptions.dto.PrescriptionResponse;
 import com.vietskin.backend_springboot.modules.prescriptions.entity.Prescription;
 import com.vietskin.backend_springboot.modules.prescriptions.entity.PrescriptionItem;
+import com.vietskin.backend_springboot.modules.prescriptions.mapper.PrescriptionMapper;
 import com.vietskin.backend_springboot.modules.prescriptions.repository.PrescriptionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -37,11 +40,18 @@ public class PrescriptionService {
     private final AppWebSocketHandler wsHandler;
 
     @Transactional
-    public Prescription create(CreatePrescriptionRequest req, Integer doctorUserId) {
+    public PrescriptionResponse create(CreatePrescriptionRequest req, Integer doctorUserId) {
         Appointment apt = appointmentRepository.findById(req.getAppointmentId())
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Lịch hẹn không tồn tại"));
 
         Doctor doctor = doctorRepository.findByUserId(doctorUserId).orElse(null);
+
+        // Bác sĩ chỉ được kê đơn cho lịch khám do chính mình phụ trách (chống kê đơn hộ bác sĩ khác)
+        Doctor aptDoctor = apt.getDoctor();
+        if (doctor == null || aptDoctor == null || !aptDoctor.getId().equals(doctor.getId())) {
+            throw new AppException(HttpStatus.FORBIDDEN,
+                    "Bạn không có quyền kê đơn cho lịch khám của bác sĩ khác");
+        }
 
         Prescription prescription = new Prescription();
         prescription.setAppointment(apt);
@@ -67,7 +77,16 @@ public class PrescriptionService {
 
             if (itemReq.getMedicineId() != null) {
                 medicineRepository.findById(itemReq.getMedicineId())
-                        .ifPresent(item::setMedicine);
+                        .ifPresent(m -> {
+                            item.setMedicine(m);
+                            if (item.getMedicineName() == null || item.getMedicineName().isBlank()) {
+                                item.setMedicineName(m.getName());
+                            }
+                        });
+            }
+
+            if (item.getMedicineName() == null || item.getMedicineName().isBlank()) {
+                throw new AppException(HttpStatus.BAD_REQUEST, "Mỗi thuốc phải có tên hoặc mã thuốc hợp lệ");
             }
             items.add(item);
         }
@@ -95,34 +114,64 @@ public class PrescriptionService {
             } catch (Exception ignored) {}
         }
 
-        return saved;
+        // Nạp lại kèm quan hệ (items/medicine) để map DTO an toàn rồi trả về
+        return prescriptionRepository.findWithDetailsById(saved.getId())
+                .map(PrescriptionMapper::toResponse)
+                .orElse(null);
     }
 
-    public Prescription findOne(Integer id) {
-        return prescriptionRepository.findById(id)
+    @Transactional(readOnly = true)
+    public PrescriptionResponse findOne(Integer id) {
+        Prescription p = prescriptionRepository.findWithDetailsById(id)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Đơn thuốc không tồn tại"));
+        // Bệnh nhân chỉ được xem đơn thuốc của chính mình (chống IDOR)
+        Appointment apt = p.getAppointment();
+        SecurityUtils.requireSelfIfPatient(
+                apt != null && apt.getPatient() != null ? apt.getPatient().getId() : null);
+        return PrescriptionMapper.toResponse(p);
     }
 
-    public List<Prescription> findByAppointment(Integer appointmentId) {
-        return prescriptionRepository.findByAppointmentId(appointmentId)
-                .map(List::of).orElse(List.of());
+    @Transactional(readOnly = true)
+    public List<PrescriptionResponse> findByAppointment(Integer appointmentId) {
+        return prescriptionRepository.findWithDetailsByAppointmentId(appointmentId)
+                .map(p -> List.of(PrescriptionMapper.toResponse(p)))
+                .orElse(List.of());
     }
 
-    public List<Prescription> findByMedicalRecord(Integer medicalRecordId) {
-        return prescriptionRepository.findByMedicalRecordId(medicalRecordId);
+    @Transactional(readOnly = true)
+    public List<PrescriptionResponse> findByMedicalRecord(Integer medicalRecordId) {
+        List<Prescription> list = prescriptionRepository.findWithDetailsByMedicalRecordId(medicalRecordId);
+        // Bệnh nhân chỉ được xem đơn thuốc của chính mình (chống IDOR khi đổi medicalRecordId trên URL)
+        if (!list.isEmpty()) {
+            Appointment apt = list.get(0).getAppointment();
+            SecurityUtils.requireSelfIfPatient(
+                    apt != null && apt.getPatient() != null ? apt.getPatient().getId() : null);
+        }
+        return PrescriptionMapper.toList(list);
     }
 
-    public List<Prescription> findByPatient(Integer patientId) {
-        return prescriptionRepository.findByAppointment_Patient_Id(patientId)
+    @Transactional(readOnly = true)
+    public List<PrescriptionResponse> findByPatient(Integer patientId) {
+        List<Prescription> list = prescriptionRepository
+                .findWithDetailsByAppointment_Patient_Id(patientId)
                 .stream()
                 .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
                 .toList();
+        return PrescriptionMapper.toList(list);
     }
 
     @Transactional
     public void delete(Integer id) {
         Prescription p = prescriptionRepository.findById(id)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Đơn thuốc không tồn tại"));
+
+        // Bác sĩ chỉ được xóa đơn thuốc của lịch khám mình phụ trách
+        Doctor current = doctorRepository.findByUserId(SecurityUtils.currentUserId()).orElse(null);
+        Doctor aptDoctor = p.getAppointment() != null ? p.getAppointment().getDoctor() : null;
+        if (current == null || aptDoctor == null || !aptDoctor.getId().equals(current.getId())) {
+            throw new AppException(HttpStatus.FORBIDDEN, "Bạn không có quyền xóa đơn thuốc của bác sĩ khác");
+        }
+
         prescriptionRepository.delete(p);
     }
 }

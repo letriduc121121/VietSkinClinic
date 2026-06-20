@@ -13,3 +13,8 @@ export interface CreateRoomDto {
 }
 
 export type UpdateRoomDto = Partial<CreateRoomDto> & { active?: boolean };
+
+export interface RoomForm {
+  name: string;
+  doctorId: string;
+}

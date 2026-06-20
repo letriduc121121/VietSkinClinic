@@ -2,7 +2,7 @@ package com.vietskin.backend_springboot.modules.invoices.controller;
 
 import com.vietskin.backend_springboot.common.response.ApiResponse;
 import com.vietskin.backend_springboot.modules.invoices.dto.CreateInvoiceRequest;
-import com.vietskin.backend_springboot.modules.invoices.entity.Invoice;
+import com.vietskin.backend_springboot.modules.invoices.dto.InvoiceResponse;
 import com.vietskin.backend_springboot.modules.invoices.service.InvoiceService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -24,7 +24,7 @@ public class InvoiceController {
     // Lễ tân / Admin tạo hóa đơn (thu tiền ngay)
     @PostMapping
     @PreAuthorize("hasAnyRole('receptionist','admin')")
-    public ApiResponse<Invoice> create(
+    public ApiResponse<InvoiceResponse> create(
             @Valid @RequestBody CreateInvoiceRequest req,
             @AuthenticationPrincipal UserDetails userDetails) {
         Integer receivedByUserId = Integer.parseInt(userDetails.getUsername());
@@ -34,7 +34,7 @@ public class InvoiceController {
     // Admin / Lễ tân xem tất cả, lọc theo status
     @GetMapping
     @PreAuthorize("hasAnyRole('admin','receptionist')")
-    public ApiResponse<List<Invoice>> findAll(
+    public ApiResponse<List<InvoiceResponse>> findAll(
             @RequestParam(required = false) String status) {
         return ApiResponse.ok(invoiceService.findAll(status));
     }
@@ -42,7 +42,7 @@ public class InvoiceController {
     // Bệnh nhân xem hóa đơn của mình
     @GetMapping("/my")
     @PreAuthorize("hasRole('patient')")
-    public ApiResponse<List<Invoice>> myInvoices(
+    public ApiResponse<List<InvoiceResponse>> myInvoices(
             @AuthenticationPrincipal UserDetails userDetails) {
         Integer patientId = Integer.parseInt(userDetails.getUsername());
         return ApiResponse.ok(invoiceService.findByPatient(patientId));
@@ -58,7 +58,7 @@ public class InvoiceController {
     // Chi tiết hóa đơn
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('admin','receptionist','patient')")
-    public ApiResponse<Invoice> findOne(@PathVariable Integer id) {
+    public ApiResponse<InvoiceResponse> findOne(@PathVariable Integer id) {
         return ApiResponse.ok(invoiceService.findOne(id));
     }
 }

@@ -1,6 +1,7 @@
 package com.vietskin.backend_springboot.modules.chatbot.controller;
 
 import com.vietskin.backend_springboot.common.response.ApiResponse;
+import com.vietskin.backend_springboot.modules.chatbot.dto.ChatHistoryResponse;
 import com.vietskin.backend_springboot.modules.chatbot.dto.ChatRequest;
 import com.vietskin.backend_springboot.modules.chatbot.dto.ChatResponse;
 import com.vietskin.backend_springboot.modules.chatbot.service.ChatService;
@@ -45,5 +46,19 @@ public class ChatController {
                 ? Integer.parseInt(userDetails.getUsername())
                 : null;
         return chatService.streamChat(req, userId);
+    }
+
+    /**
+     * Lấy lịch sử hội thoại gần nhất của user đang đăng nhập để FE khôi phục sau khi reload.
+     * Khách chưa đăng nhập → trả về rỗng.
+     */
+    @GetMapping("/history")
+    public ApiResponse<ChatHistoryResponse> history(
+            @AuthenticationPrincipal UserDetails userDetails) {
+        if (userDetails == null) {
+            return ApiResponse.ok(new ChatHistoryResponse(null, java.util.List.of()));
+        }
+        Integer userId = Integer.parseInt(userDetails.getUsername());
+        return ApiResponse.ok(chatService.getHistory(userId));
     }
 }

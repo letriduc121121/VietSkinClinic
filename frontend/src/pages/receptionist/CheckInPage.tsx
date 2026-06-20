@@ -1,122 +1,31 @@
-import { useState, useEffect, useRef } from 'react';
-import { useSocket } from '@/shared/hooks/useSocket';
-import { appointmentApi } from '@/features/appointments/api/appointment.api';
-import type { Appointment } from '@/features/appointments/types/appointment.types';
-
-interface Patient {
-  id: number;
-  name: string;
-  phone: string;
-}
-
-type QueueItem = Appointment;
-
-const todayISO = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-
-const STATUS_CFG: Record<string, { label: string; cls: string }> = {
-  pending:     { label: 'Chờ xác nhận', cls: 'bg-amber-100 text-amber-700' },
-  confirmed:   { label: 'Đã xác nhận',  cls: 'bg-blue-100 text-[#1a3a5c]' },
-  checked_in:  { label: 'Đã check-in',  cls: 'bg-teal-100 text-teal-700' },
-  in_progress: { label: 'Đang khám',    cls: 'bg-purple-100 text-purple-700' },
-  done:        { label: 'Hoàn thành',   cls: 'bg-green-100 text-green-700' },
-};
+import { useRef } from 'react';
+import { useCheckIn } from '@/features/appointments/hooks/useCheckIn';
+import { statusBadge } from '@/features/appointments/lib/status';
 
 export default function CheckInPage() {
-  const [phone, setPhone] = useState('');
-  const [searching, setSearching] = useState(false);
-  const [lookupResult, setLookupResult] = useState<{ appointments: Appointment[]; patient: Patient | null } | null>(null);
-  const [selectedApt, setSelectedApt] = useState<Appointment | null>(null);
-  const [processing, setProcessing] = useState(false);
-  const [success, setSuccess] = useState(false);
-  const [checkedInApt, setCheckedInApt] = useState<Appointment | null>(null);
-  const [queue, setQueue] = useState<QueueItem[]>([]);
-  const [queueLoading, setQueueLoading] = useState(true);
-  const [error, setError] = useState('');
+  const {
+    phone, setPhone, searching, lookupResult, selectedApt, setSelectedApt,
+    processing, success, checkedInApt, error, search, checkin, reset,
+    queue, queueLoading,
+  } = useCheckIn();
   const inputRef = useRef<HTMLInputElement>(null);
-  const today = todayISO();
-
-  const loadQueue = () => {
-    appointmentApi.getList({ date: today })
-      .then(all => {
-        setQueue(all.filter(a => ['checked_in', 'in_progress'].includes(a.status)));
-      })
-      .finally(() => setQueueLoading(false));
-  };
-
-  useEffect(() => { loadQueue(); }, []);
-
-  useSocket(
-    (event) => {
-      if (event === 'appointment_created' || event === 'appointment_updated') loadQueue();
-    },
-    { topics: ['/topic/appointments'] },
-  );
-
-  const handleSearch = async () => {
-    if (!phone.trim()) return;
-    setSearching(true);
-    setError('');
-    setLookupResult(null);
-    setSelectedApt(null);
-    setSuccess(false);
-    try {
-      const result = await appointmentApi.lookup(phone.trim(), today) as any;
-      setLookupResult(result);
-      const eligible = result.appointments.filter(
-        (a: Appointment) => a.status === 'confirmed' || a.status === 'pending'
-      );
-      if (eligible.length === 1) setSelectedApt(eligible[0]);
-    } catch (e: any) {
-      setError(e.response?.data?.message ?? 'Không tìm thấy lịch hẹn cho số điện thoại này hôm nay');
-    } finally {
-      setSearching(false);
-    }
-  };
-
-  const handleCheckin = async () => {
-    if (!selectedApt) return;
-    setProcessing(true);
-    setError('');
-    try {
-      await appointmentApi.updateStatus(selectedApt.id, 'checked_in');
-      // Reload để lấy queueNumber vừa được gán
-      const updated = await appointmentApi.getById(selectedApt.id);
-      setCheckedInApt(updated ?? selectedApt);
-      setSuccess(true);
-      loadQueue();
-    } catch (e: any) {
-      setError(e.response?.data?.message ?? 'Có lỗi xảy ra, vui lòng thử lại');
-    } finally {
-      setProcessing(false);
-    }
-  };
-
-  const reset = () => {
-    setPhone('');
-    setLookupResult(null);
-    setSelectedApt(null);
-    setSuccess(false);
-    setCheckedInApt(null);
-    setError('');
-    setTimeout(() => inputRef.current?.focus(), 100);
-  };
 
   const canCheckin = selectedApt && (selectedApt.status === 'confirmed' || selectedApt.status === 'pending');
+
+  const resetAndFocus = () => {
+    reset();
+    setTimeout(() => inputRef.current?.focus(), 100);
+  };
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Check-in bệnh nhân</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Tiếp nhận bệnh nhân và cấp số thứ tự vào hàng chờ.
-        </p>
+        <p className="text-sm text-gray-500 mt-1">Tiếp nhận bệnh nhân và cấp số thứ tự vào hàng chờ.</p>
       </div>
 
       <div className="grid lg:grid-cols-5 gap-6">
-        {/* Left panel */}
         <div className="lg:col-span-3 space-y-5">
-
-          {/* Step 1: Search */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
             <h2 className="font-bold text-base flex items-center gap-2">
               <span className="w-6 h-6 bg-[#1a3a5c] text-white rounded-full text-xs flex items-center justify-center font-bold">1</span>
@@ -128,12 +37,12 @@ export default function CheckInPage() {
                 type="tel"
                 value={phone}
                 onChange={e => setPhone(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleSearch()}
+                onKeyDown={e => e.key === 'Enter' && search()}
                 placeholder="Nhập số điện thoại..."
                 className="flex-1 bg-gray-50 rounded-xl px-4 py-3 text-sm border border-transparent focus:border-[#1a3a5c]/30 focus:outline-none focus:ring-2 focus:ring-[#1a3a5c]/10"
               />
               <button
-                onClick={handleSearch}
+                onClick={search}
                 disabled={searching || !phone.trim()}
                 className="px-5 py-3 bg-[#1a3a5c] text-white rounded-xl font-bold text-sm hover:bg-[#0f2540] transition-all disabled:opacity-60 min-w-[110px] flex items-center justify-center gap-2"
               >
@@ -150,9 +59,7 @@ export default function CheckInPage() {
               </button>
             </div>
 
-            {error && (
-              <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600">{error}</div>
-            )}
+            {error && <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600">{error}</div>}
 
             {lookupResult && !success && (
               <div className="space-y-3">
@@ -201,8 +108,8 @@ export default function CheckInPage() {
                                 {a.service && ` · ${a.service.name}`}
                               </div>
                             </div>
-                            <span className={`text-xs px-2.5 py-1 rounded-full font-bold flex-shrink-0 ${STATUS_CFG[a.status]?.cls ?? ''}`}>
-                              {STATUS_CFG[a.status]?.label ?? a.status}
+                            <span className={`text-xs px-2.5 py-1 rounded-full font-bold flex-shrink-0 ${statusBadge[a.status]?.cls ?? ''}`}>
+                              {statusBadge[a.status]?.label ?? a.status}
                             </span>
                           </div>
                           {alreadyDone && a.queueNumber && (
@@ -217,7 +124,6 @@ export default function CheckInPage() {
             )}
           </div>
 
-          {/* Step 2: Confirm check-in */}
           {canCheckin && !success && (
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-5">
               <h2 className="font-bold text-base flex items-center gap-2">
@@ -253,12 +159,10 @@ export default function CheckInPage() {
                 Sau check-in, bệnh nhân sẽ được cấp số thứ tự và chờ bác sĩ gọi vào.
               </div>
 
-              {error && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600">{error}</div>
-              )}
+              {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600">{error}</div>}
 
               <button
-                onClick={handleCheckin}
+                onClick={checkin}
                 disabled={processing}
                 className="w-full bg-teal-500 text-white py-3.5 rounded-xl font-bold text-sm hover:bg-teal-600 transition-all flex items-center justify-center gap-2 disabled:opacity-60 shadow-lg shadow-teal-500/20"
               >
@@ -279,7 +183,6 @@ export default function CheckInPage() {
             </div>
           )}
 
-          {/* Success */}
           {success && checkedInApt && (
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 text-center space-y-5">
               <div className="w-16 h-16 bg-teal-100 rounded-full flex items-center justify-center mx-auto">
@@ -292,43 +195,36 @@ export default function CheckInPage() {
                 <p className="text-sm text-gray-500 mt-1">{checkedInApt.patientName} đã được thêm vào hàng chờ</p>
               </div>
 
-              {/* Queue number highlight */}
-              {(checkedInApt as any).queueNumber && (
+              {checkedInApt.queueNumber && (
                 <div className="inline-flex flex-col items-center justify-center w-24 h-24 bg-[#1a3a5c] text-white rounded-2xl mx-auto">
                   <span className="text-xs font-medium opacity-70">Số thứ tự</span>
-                  <span className="text-4xl font-bold">{(checkedInApt as any).queueNumber}</span>
+                  <span className="text-4xl font-bold">{checkedInApt.queueNumber}</span>
                 </div>
               )}
 
               <div className="bg-gray-50 rounded-2xl p-4 space-y-2 text-sm text-left">
                 <div className="flex justify-between">
                   <span className="text-gray-500">Bác sĩ</span>
-                  <span className="font-semibold">{(checkedInApt as any).doctor?.user?.name}</span>
+                  <span className="font-semibold">{checkedInApt.doctor?.user?.name}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Giờ đặt</span>
-                  <span className="font-semibold">{(checkedInApt as any).time}</span>
+                  <span className="font-semibold">{checkedInApt.time}</span>
                 </div>
               </div>
 
-              <button
-                onClick={reset}
-                className="w-full bg-[#1a3a5c] text-white py-3 rounded-xl font-bold text-sm hover:bg-[#0f2540] transition-all"
-              >
+              <button onClick={resetAndFocus} className="w-full bg-[#1a3a5c] text-white py-3 rounded-xl font-bold text-sm hover:bg-[#0f2540] transition-all">
                 Check-in bệnh nhân tiếp theo
               </button>
             </div>
           )}
         </div>
 
-        {/* Right: Queue */}
         <div className="lg:col-span-2">
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden sticky top-6">
             <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
               <h2 className="font-bold text-base">Hàng chờ hôm nay</h2>
-              <span className="text-xs px-2.5 py-1 bg-teal-100 text-teal-700 rounded-full font-bold">
-                {queue.length} người
-              </span>
+              <span className="text-xs px-2.5 py-1 bg-teal-100 text-teal-700 rounded-full font-bold">{queue.length} người</span>
             </div>
 
             {queueLoading ? (
@@ -345,9 +241,7 @@ export default function CheckInPage() {
                 {queue.map((q, i) => (
                   <div key={q.id} className="px-5 py-3.5 flex items-center gap-3">
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
-                      q.status === 'in_progress'
-                        ? 'bg-purple-100 text-purple-700'
-                        : 'bg-teal-100 text-teal-700'
+                      q.status === 'in_progress' ? 'bg-purple-100 text-purple-700' : 'bg-teal-100 text-teal-700'
                     }`}>
                       {q.queueNumber ?? i + 1}
                     </div>
@@ -356,9 +250,7 @@ export default function CheckInPage() {
                       <div className="text-xs text-gray-400 truncate">{q.time} · {q.doctor.user.name}</div>
                     </div>
                     {q.status === 'in_progress' && (
-                      <span className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded-full font-bold flex-shrink-0">
-                        Đang khám
-                      </span>
+                      <span className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded-full font-bold flex-shrink-0">Đang khám</span>
                     )}
                   </div>
                 ))}

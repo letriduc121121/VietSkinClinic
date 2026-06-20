@@ -2,7 +2,7 @@ package com.vietskin.backend_springboot.modules.prescriptions.controller;
 
 import com.vietskin.backend_springboot.common.response.ApiResponse;
 import com.vietskin.backend_springboot.modules.prescriptions.dto.CreatePrescriptionRequest;
-import com.vietskin.backend_springboot.modules.prescriptions.entity.Prescription;
+import com.vietskin.backend_springboot.modules.prescriptions.dto.PrescriptionResponse;
 import com.vietskin.backend_springboot.modules.prescriptions.service.PrescriptionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -23,7 +23,7 @@ public class PrescriptionController {
     // Bác sĩ tạo đơn thuốc
     @PostMapping
     @PreAuthorize("hasRole('doctor')")
-    public ApiResponse<Prescription> create(
+    public ApiResponse<PrescriptionResponse> create(
             @Valid @RequestBody CreatePrescriptionRequest req,
             @AuthenticationPrincipal UserDetails userDetails) {
         Integer doctorUserId = Integer.parseInt(userDetails.getUsername());
@@ -33,28 +33,28 @@ public class PrescriptionController {
     // Chi tiết đơn thuốc
     @GetMapping("/{id}")
     @PreAuthorize("isAuthenticated()")
-    public ApiResponse<Prescription> findOne(@PathVariable Integer id) {
+    public ApiResponse<PrescriptionResponse> findOne(@PathVariable Integer id) {
         return ApiResponse.ok(prescriptionService.findOne(id));
     }
 
     // Theo lịch hẹn
     @GetMapping("/appointment/{appointmentId}")
     @PreAuthorize("hasAnyRole('doctor','admin','receptionist')")
-    public ApiResponse<List<Prescription>> byAppointment(@PathVariable Integer appointmentId) {
+    public ApiResponse<List<PrescriptionResponse>> byAppointment(@PathVariable Integer appointmentId) {
         return ApiResponse.ok(prescriptionService.findByAppointment(appointmentId));
     }
 
     // Theo bệnh án
     @GetMapping("/medical-record/{medicalRecordId}")
     @PreAuthorize("isAuthenticated()")
-    public ApiResponse<List<Prescription>> byMedicalRecord(@PathVariable Integer medicalRecordId) {
+    public ApiResponse<List<PrescriptionResponse>> byMedicalRecord(@PathVariable Integer medicalRecordId) {
         return ApiResponse.ok(prescriptionService.findByMedicalRecord(medicalRecordId));
     }
 
     // Bệnh nhân xem đơn thuốc của mình
     @GetMapping("/my/list")
     @PreAuthorize("hasRole('patient')")
-    public ApiResponse<List<Prescription>> myPrescriptions(
+    public ApiResponse<List<PrescriptionResponse>> myPrescriptions(
             @AuthenticationPrincipal UserDetails userDetails) {
         Integer patientId = Integer.parseInt(userDetails.getUsername());
         return ApiResponse.ok(prescriptionService.findByPatient(patientId));

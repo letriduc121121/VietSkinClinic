@@ -2,15 +2,10 @@ spring:
   application:
     name: vietskin-backend
 
+  # Mặc định (local/dev): cache in-memory — KHÔNG cần Redis/cổng 6379.
+  # Production (VPS) bật profile "prod" để dùng Redis Upstash (xem cuối file).
   cache:
-    type: redis
-  data:
-    redis:
-      host: ${REDIS_HOST:immortal-jaybird-137879.upstash.io}
-      port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD}
-      ssl:
-        enabled: true
+    type: simple
 
   docker:
     compose:
@@ -22,9 +17,9 @@ spring:
       max-request-size: 10MB
 
   datasource:
-    url: jdbc:mysql://127.0.0.1:3306/vietskin?useSSL=false&serverTimezone=Asia/Ho_Chi_Minh&allowPublicKeyRetrieval=true
-    username: root
-    password: "123456"
+    url: ${DB_URL:jdbc:mysql://127.0.0.1:3306/vietskin?useSSL=false&serverTimezone=Asia/Ho_Chi_Minh&allowPublicKeyRetrieval=true}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:123456}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
@@ -55,9 +50,45 @@ cloudinary:
   api-key: ${CLOUDINARY_API_KEY}
   api-secret: ${CLOUDINARY_API_SECRET}
 
-# Chatbot AI — Groq (OpenAI-compatible, miễn phí)
-# Ưu tiên đọc biến môi trường GROQ_API_KEY.
-groq:
-  api-key: ${GROQ_API_KEY}
-  base-url: https://api.groq.com/openai/v1
-  model: ${GROQ_MODEL:llama-3.3-70b-versatile}
+# Chatbot AI — Đa nhà cung cấp (Fallback tự động: thử lần lượt, provider đầu ưu tiên nhất)
+# Provider nào thiếu API key sẽ tự động bị bỏ qua.
+ai:
+  providers:
+    - name: Groq
+      base-url: https://api.groq.com/openai/v1
+      api-key: ${GROQ_API_KEY:}
+      model: ${GROQ_MODEL:meta-llama/llama-4-scout-17b-16e-instruct}
+    - name: Groq-Qwen
+      base-url: https://api.groq.com/openai/v1
+      api-key: ${GROQ_API_KEY:}
+      model: ${GROQ_QWEN_MODEL:qwen/qwen3.6-27b}
+    - name: Groq-GptOss
+      base-url: https://api.groq.com/openai/v1
+      api-key: ${GROQ_API_KEY:}
+      model: ${GROQ_GPTOSS_MODEL:openai/gpt-oss-120b}
+    - name: Gemini
+      base-url: https://generativelanguage.googleapis.com/v1beta/openai
+      api-key: ${GEMINI_API_KEY:}
+      model: ${GEMINI_MODEL:gemini-2.5-flash}
+    - name: Cerebras
+      base-url: https://api.cerebras.ai/v1
+      api-key: ${CEREBRAS_API_KEY:}
+      model: ${CEREBRAS_MODEL:gpt-oss-120b}
+
+# ─────────────────────────────────────────────────────────────
+# Profile "prod" (VPS): dùng Redis Upstash. Kích hoạt bằng
+# SPRING_PROFILES_ACTIVE=prod (đã set trong docker-compose).
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+  cache:
+    type: redis
+  data:
+    redis:
+      host: ${REDIS_HOST:immortal-jaybird-137879.upstash.io}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
+      ssl:
+        enabled: true

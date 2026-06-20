@@ -1,27 +1,8 @@
-import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/app/providers/AuthProvider';
-import { appointmentApi } from '@/features/appointments/api/appointment.api';
-import { medicalRecordApi } from '@/features/medical-records/api/medical-record.api';
-import { notificationApi } from '@/features/notifications/api/notification.api';
-import { userApi } from '@/features/users/api/user.api';
-import type { Appointment } from '@/features/appointments/types/appointment.types';
-import type { MedicalRecord } from '@/features/medical-records/types/medical-record.types';
-
-interface Notification {
-  id: number;
-  message: string;
-  isRead: boolean;
-  createdAt: string;
-  type: string;
-}
-
-interface PatientProfile {
-  patientProfile: {
-    bloodType: string | null;
-    allergies: string | null;
-  } | null;
-}
+import { useDisclosure } from '@/shared/hooks/useDisclosure';
+import { ConfirmDialog } from '@/shared/components/ConfirmDialog';
+import { usePatientDashboard } from '@/features/dashboard/hooks/usePatientDashboard';
 
 const UPCOMING = ['pending', 'confirmed', 'checked_in', 'in_progress'];
 
@@ -61,44 +42,8 @@ export default function PatientDashboard() {
   });
   const todayStr = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
 
-  const [appointments, setAppointments]   = useState<Appointment[]>([]);
-  const [records,      setRecords]        = useState<MedicalRecord[]>([]);
-  const [notifications,setNotifications]  = useState<Notification[]>([]);
-  const [profile,      setProfile]        = useState<PatientProfile | null>(null);
-  const [loading,      setLoading]        = useState(true);
-  const [cancelling,   setCancelling]     = useState(false);
-
-  const loadAppointments = async () => {
-    const data = await appointmentApi.getMy();
-    setAppointments(Array.isArray(data) ? data : []);
-  };
-
-  useEffect(() => {
-    const load = async () => {
-      const [apptRes, recRes, notifRes, profRes] = await Promise.allSettled([
-        appointmentApi.getMy(),
-        medicalRecordApi.getMy(),
-        notificationApi.getAll(),
-        userApi.getProfile(),
-      ]);
-
-      if (apptRes.status === 'fulfilled') {
-        setAppointments(Array.isArray(apptRes.value) ? apptRes.value : []);
-      }
-      if (recRes.status === 'fulfilled') {
-        setRecords(Array.isArray(recRes.value) ? recRes.value : []);
-      }
-      if (notifRes.status === 'fulfilled') {
-        setNotifications(Array.isArray(notifRes.value) ? notifRes.value.slice(0, 5) : []);
-      }
-      if (profRes.status === 'fulfilled') {
-        setProfile(profRes.value as any);
-      }
-
-      setLoading(false);
-    };
-    load();
-  }, []);
+  const { appointments, records, notifications, profile, loading, cancelling, cancel } = usePatientDashboard();
+  const cancelDisc = useDisclosure<number>();
 
   const upcoming = appointments
     .filter(a => UPCOMING.includes(a.status) && a.date >= todayStr)
@@ -109,15 +54,10 @@ export default function PatientDashboard() {
   const recentRecords = records.slice(0, 3);
   const unread        = notifications.filter(n => !n.isRead).length;
 
-  const handleCancel = async (id: number) => {
-    if (!confirm('Bạn có chắc muốn huỷ lịch hẹn này?')) return;
-    setCancelling(true);
-    try {
-      await appointmentApi.cancel(id);
-      await loadAppointments();
-    } finally {
-      setCancelling(false);
-    }
+  const confirmCancel = async () => {
+    if (cancelDisc.data == null) return;
+    await cancel(cancelDisc.data);
+    cancelDisc.close();
   };
 
   const stats = [
@@ -201,7 +141,7 @@ export default function PatientDashboard() {
                       </Link>
                       {(nextAppt.status === 'pending' || nextAppt.status === 'confirmed') && (
                         <button
-                          onClick={() => handleCancel(nextAppt.id)}
+                          onClick={() => cancelDisc.openWith(nextAppt.id)}
                           disabled={cancelling}
                           className="px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-lg text-sm text-blue-200 transition-colors disabled:opacity-50"
                         >
@@ -345,6 +285,18 @@ export default function PatientDashboard() {
           </div>
         </div>
       </div>
+
+      {cancelDisc.isOpen && (
+        <ConfirmDialog
+          title="Huỷ lịch hẹn"
+          message="Bạn có chắc muốn huỷ lịch hẹn này?"
+          confirmLabel="Huỷ lịch"
+          loadingLabel="Đang huỷ..."
+          loading={cancelling}
+          onClose={cancelDisc.close}
+          onConfirm={confirmCancel}
+        />
+      )}
     </div>
   );
 }

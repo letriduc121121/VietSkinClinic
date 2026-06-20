@@ -1,9 +1,6 @@
-import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/app/providers/AuthProvider';
-import { doctorApi } from '@/features/doctors/api/doctor.api';
-import { appointmentApi } from '@/features/appointments/api/appointment.api';
-import type { Appointment } from '@/features/appointments/types/appointment.types';
+import { useDoctorDashboard } from '@/features/dashboard/hooks/useDoctorDashboard';
 
 const STATUS: Record<string, { label: string; cls: string }> = {
   pending:     { label: 'Chờ xác nhận', cls: 'bg-amber-100 text-amber-700'   },
@@ -20,27 +17,8 @@ export default function DoctorDashboard() {
   const today = new Date().toLocaleDateString('vi-VN', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
   });
-  const todayStr = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
 
-  const [, setDoctorId] = useState<number | null>(null);
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [loading,      setLoading]      = useState(true);
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const docs = await doctorApi.getAll();
-        const me = docs.find((d: any) => d.userId === user?.id);
-        if (!me) { setLoading(false); return; }
-        setDoctorId(me.id);
-
-        const data = await appointmentApi.getList({ date: todayStr, doctorId: me.id });
-        setAppointments(Array.isArray(data) ? data : []);
-      } catch { /* silent */ }
-      setLoading(false);
-    };
-    if (user?.id) load();
-  }, [user?.id, todayStr]);
+  const { appointments, loading } = useDoctorDashboard();
 
   const waiting     = appointments.filter(a => a.status === 'checked_in');
   const inProgress  = appointments.filter(a => a.status === 'in_progress');

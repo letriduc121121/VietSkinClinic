@@ -8,6 +8,10 @@ export const workDayApi = {
   getAll: (params?: { month?: string; doctorId?: number }): Promise<WorkDay[]> =>
     api.get('/doctor-work-days', { params }).then(unwrap),
 
+  /** Bác sĩ — lấy lịch làm việc của chính mình theo tháng (YYYY-MM) */
+  getMine: (month: string): Promise<WorkDay[]> =>
+    api.get('/doctor-work-days/my', { params: { month } }).then(unwrap),
+
   /** Tạo 1 ngày làm việc */
   create: (dto: CreateWorkDayDto): Promise<WorkDay> =>
     api.post('/doctor-work-days', dto).then(unwrap),

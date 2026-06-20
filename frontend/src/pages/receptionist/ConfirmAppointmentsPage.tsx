@@ -1,12 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useSocket } from '@/shared/hooks/useSocket';
-import { appointmentApi } from '@/features/appointments/api/appointment.api';
+import { useState } from 'react';
+import { useDisclosure } from '@/shared/hooks/useDisclosure';
+import { ConfirmDialog } from '@/shared/components/ConfirmDialog';
 import type { Appointment } from '@/features/appointments/types/appointment.types';
+import { usePendingApprovals } from '@/features/appointments/hooks/usePendingApprovals';
 
-/* ── Helpers ────────────────────────────────────────────────────────────── */
-
-const todayISO = () =>
-  new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+const todayISO = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 
 const formatDate = (iso: string) => {
   const d = new Date(iso.slice(0, 10) + 'T00:00:00');
@@ -14,10 +12,8 @@ const formatDate = (iso: string) => {
   return `${days[d.getDay()]}, ${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}`;
 };
 
-const formatMoney = (v: string | number) =>
-  Number(v).toLocaleString('vi-VN') + 'đ';
+const formatMoney = (v: string | number) => Number(v).toLocaleString('vi-VN') + 'đ';
 
-/** Nhãn tương đối */
 const relativeLabel = (iso: string) => {
   const dateStr = iso.slice(0, 10);
   const now = new Date(Date.now() - new Date().getTimezoneOffset() * 60000);
@@ -28,102 +24,47 @@ const relativeLabel = (iso: string) => {
   return formatDate(iso);
 };
 
-/** Sắp xếp: ngày gần nhất trước, cùng ngày thì giờ sớm nhất trước */
-const sortByNearest = (a: Appointment, b: Appointment) => {
-  const da = a.date.slice(0, 10) + 'T' + a.time;
-  const db = b.date.slice(0, 10) + 'T' + b.time;
-  return da.localeCompare(db);
-};
-
-/* ── Component ──────────────────────────────────────────────────────────── */
-
 export default function ConfirmAppointmentsPage() {
-  const [apts, setApts] = useState<Appointment[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [actioning, setActioning] = useState<number | null>(null);
+  const { apts, loading, actioning, recentConfirmed, reload, confirm: approve, reject, confirmAll } = usePendingApprovals();
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [detail, setDetail] = useState<Appointment | null>(null);
-  const [recentConfirmed, setRecentConfirmed] = useState<{ id: number; name: string; time: string; date: string; doctor: string }[]>([]);
-
-  // Lấy tất cả lịch hẹn pending (từ hôm nay trở đi)
-  const load = useCallback(() => {
-    setLoading(true);
-    appointmentApi.getList({ status: 'pending', dateFrom: todayISO() })
-      .then(data => setApts((data ?? []).sort(sortByNearest)))
-      .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-
-  useSocket(
-    (event) => {
-      if (event === 'appointment_created' || event === 'appointment_updated') load();
-    },
-    { topics: ['/topic/appointments'] },
-  );
-
-  /* ── Actions ──────────────────────────────────────────────────────────── */
+  const rejectDisc = useDisclosure<Appointment>();
+  const confirmAllDisc = useDisclosure();
+  const [rejecting, setRejecting] = useState(false);
+  const [confirmingAll, setConfirmingAll] = useState(false);
 
   const handleConfirm = async (apt: Appointment) => {
-    setActioning(apt.id);
+    await approve(apt);
+    if (detail?.id === apt.id) setDetail(null);
+  };
+
+  const doReject = async () => {
+    if (!rejectDisc.data) return;
+    setRejecting(true);
     try {
-      await appointmentApi.updateStatus(apt.id, 'confirmed');
-      setApts(p => p.filter(a => a.id !== apt.id));
-      setRecentConfirmed(prev => [{
-        id: apt.id,
-        name: apt.patientName,
-        time: apt.time,
-        date: apt.date,
-        doctor: apt.doctor.user.name,
-      }, ...prev].slice(0, 10));
-      if (detail?.id === apt.id) setDetail(null);
-    } finally { setActioning(null); }
+      await reject(rejectDisc.data.id);
+      if (detail?.id === rejectDisc.data.id) setDetail(null);
+      rejectDisc.close();
+    } finally { setRejecting(false); }
   };
 
-  const handleCancel = async (id: number) => {
-    if (!confirm('Từ chối lịch hẹn này? Bệnh nhân sẽ được thông báo huỷ.')) return;
-    setActioning(id);
-    try {
-      await appointmentApi.cancel(id);
-      setApts(p => p.filter(a => a.id !== id));
-      if (detail?.id === id) setDetail(null);
-    } finally { setActioning(null); }
+  const doConfirmAll = async () => {
+    setConfirmingAll(true);
+    try { await confirmAll(displayed); confirmAllDisc.close(); }
+    finally { setConfirmingAll(false); }
   };
 
-  const handleConfirmAll = async () => {
-    if (!displayed.length || !confirm(`Xác nhận tất cả ${displayed.length} lịch hẹn đang chờ?`)) return;
-    setActioning(-1);
-    try {
-      await Promise.all(displayed.map(a => appointmentApi.updateStatus(a.id, 'confirmed')));
-      setRecentConfirmed(prev => [
-        ...displayed.map(a => ({ id: a.id, name: a.patientName, time: a.time, date: a.date, doctor: a.doctor.user.name })),
-        ...prev,
-      ].slice(0, 10));
-      setApts(p => p.filter(a => !displayed.find(d => d.id === a.id)));
-    } finally { setActioning(null); }
-  };
-
-  const handleSearch = () => {
-    setSearchQuery(searchInput);
-    load();
-  };
-
-  const handleClearSearch = () => {
-    setSearchInput('');
-    setSearchQuery('');
-  };
-
-  /* ── Filter ───────────────────────────────────────────────────────────── */
+  const handleSearch = () => { setSearchQuery(searchInput); reload(); };
+  const handleClearSearch = () => { setSearchInput(''); setSearchQuery(''); };
 
   const displayed = apts.filter(a =>
     !searchQuery ||
     a.patientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
     a.patientPhone?.includes(searchQuery) ||
-    a.doctor.user.name.toLowerCase().includes(searchQuery.toLowerCase())
+    a.doctor.user.name.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
-  // Nhóm theo ngày
   const grouped = displayed.reduce<Record<string, Appointment[]>>((acc, a) => {
     const key = a.date.slice(0, 10);
     (acc[key] ??= []).push(a);
@@ -131,23 +72,15 @@ export default function ConfirmAppointmentsPage() {
   }, {});
   const sortedDates = Object.keys(grouped).sort();
 
-  /* ── Render ───────────────────────────────────────────────────────────── */
-
   return (
     <div className="space-y-5">
-      {/* Header */}
       <div>
         <h1 className="text-2xl font-bold">Duyệt lịch hẹn</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Duyệt các lịch đặt khám online từ bệnh nhân — ưu tiên gần giờ khám nhất.
-        </p>
+        <p className="text-sm text-gray-500 mt-1">Duyệt các lịch đặt khám online từ bệnh nhân — ưu tiên gần giờ khám nhất.</p>
       </div>
 
       <div className="grid lg:grid-cols-5 gap-6">
-        {/* ── LEFT: Danh sách cần duyệt ────────────────────────────────── */}
         <div className="lg:col-span-3 space-y-4">
-
-          {/* Search + action bar */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-wrap gap-3 items-center">
             <div className="relative flex-1 min-w-[200px]">
               <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -161,29 +94,26 @@ export default function ConfirmAppointmentsPage() {
                 className="w-full pl-10 pr-8 py-2.5 bg-gray-50 rounded-xl text-sm border border-transparent focus:border-[#1a3a5c]/30 focus:outline-none focus:ring-2 focus:ring-[#1a3a5c]/10"
               />
               {searchInput && (
-                <button onClick={handleClearSearch}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                <button onClick={handleClearSearch} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
               )}
             </div>
-            <button onClick={handleSearch}
-              className="flex items-center gap-2 px-4 py-2.5 bg-[#1a3a5c] text-white rounded-xl text-sm font-semibold hover:bg-[#15304e] transition-all">
+            <button onClick={handleSearch} className="flex items-center gap-2 px-4 py-2.5 bg-[#1a3a5c] text-white rounded-xl text-sm font-semibold hover:bg-[#15304e] transition-all">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
               Tìm kiếm
             </button>
-            <button onClick={load} title="Làm mới dữ liệu"
-              className="p-2.5 bg-gray-100 rounded-xl hover:bg-gray-200 transition-all text-gray-500">
+            <button onClick={reload} title="Làm mới dữ liệu" className="p-2.5 bg-gray-100 rounded-xl hover:bg-gray-200 transition-all text-gray-500">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
             </button>
             {displayed.length > 1 && (
-              <button onClick={handleConfirmAll} disabled={actioning === -1}
+              <button onClick={confirmAllDisc.open} disabled={actioning === -1}
                 className="flex items-center gap-2 bg-teal-500 text-white px-4 py-2.5 rounded-xl font-bold text-sm hover:bg-teal-600 transition-all shadow-md disabled:opacity-60">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                 Xác nhận tất cả ({displayed.length})
@@ -191,28 +121,20 @@ export default function ConfirmAppointmentsPage() {
             )}
           </div>
 
-          {/* List */}
           {loading ? (
             <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-[#1a3a5c] border-t-transparent rounded-full animate-spin" /></div>
           ) : displayed.length === 0 ? (
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-16 text-center">
               <div className="text-5xl mb-4">✅</div>
-              <h3 className="text-lg font-bold text-gray-700">
-                {apts.length === 0 ? 'Không có lịch hẹn chờ duyệt' : 'Không tìm thấy kết quả'}
-              </h3>
-              <p className="text-sm text-gray-400 mt-1">
-                {apts.length === 0 ? 'Tất cả lịch hẹn đã được xử lý.' : 'Thử tìm kiếm với từ khoá khác.'}
-              </p>
+              <h3 className="text-lg font-bold text-gray-700">{apts.length === 0 ? 'Không có lịch hẹn chờ duyệt' : 'Không tìm thấy kết quả'}</h3>
+              <p className="text-sm text-gray-400 mt-1">{apts.length === 0 ? 'Tất cả lịch hẹn đã được xử lý.' : 'Thử tìm kiếm với từ khoá khác.'}</p>
             </div>
           ) : (
             <div className="space-y-5">
               {sortedDates.map(date => (
                 <div key={date}>
-                  {/* Date header */}
                   <div className="flex items-center gap-3 mb-3">
-                    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-bold ${
-                      date === todayISO() ? 'bg-[#1a3a5c] text-white' : 'bg-gray-100 text-gray-700'
-                    }`}>
+                    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-bold ${date === todayISO() ? 'bg-[#1a3a5c] text-white' : 'bg-gray-100 text-gray-700'}`}>
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                       {relativeLabel(date)}
                     </div>
@@ -220,18 +142,12 @@ export default function ConfirmAppointmentsPage() {
                     <div className="flex-1 h-px bg-gray-100" />
                   </div>
 
-                  {/* Appointment cards */}
                   <div className="space-y-2.5">
                     {grouped[date].map(apt => (
-                      <div key={apt.id}
-                        className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-4 flex items-center gap-4">
-
-                        {/* Avatar */}
+                      <div key={apt.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-4 flex items-center gap-4">
                         <div className="w-11 h-11 bg-amber-100 text-amber-700 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0">
                           {apt.patientName.charAt(0)}
                         </div>
-
-                        {/* Info */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-bold text-sm">{apt.patientName}</span>
@@ -242,26 +158,14 @@ export default function ConfirmAppointmentsPage() {
                             {apt.service && <> · {apt.service.name}</>}
                             {' · '}<span className="font-semibold text-[#1a3a5c]">{apt.time}</span>
                           </div>
-                          {apt.symptoms && (
-                            <div className="text-xs text-gray-400 mt-0.5 truncate">
-                              Triệu chứng: {apt.symptoms}
-                            </div>
-                          )}
+                          {apt.symptoms && <div className="text-xs text-gray-400 mt-0.5 truncate">Triệu chứng: {apt.symptoms}</div>}
                         </div>
-
-                        {/* Status badge */}
-                        <span className="text-xs px-2.5 py-1 bg-amber-100 text-amber-700 rounded-full font-bold flex-shrink-0 hidden sm:inline-block">
-                          Chờ duyệt
-                        </span>
-
-                        {/* Actions */}
+                        <span className="text-xs px-2.5 py-1 bg-amber-100 text-amber-700 rounded-full font-bold flex-shrink-0 hidden sm:inline-block">Chờ duyệt</span>
                         <div className="flex items-center gap-2 flex-shrink-0">
-                          <button onClick={() => setDetail(apt)}
-                            className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors"
-                            title="Xem chi tiết">
+                          <button onClick={() => setDetail(apt)} className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors" title="Xem chi tiết">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
                           </button>
-                          <button onClick={() => handleCancel(apt.id)} disabled={actioning === apt.id}
+                          <button onClick={() => rejectDisc.openWith(apt)} disabled={actioning === apt.id}
                             className="text-xs px-3 py-2 border border-red-200 text-red-500 rounded-xl font-bold hover:bg-red-50 transition-all disabled:opacity-50">
                             Từ chối
                           </button>
@@ -282,9 +186,7 @@ export default function ConfirmAppointmentsPage() {
           )}
         </div>
 
-        {/* ── RIGHT: Summary panel ──────────────────────────────────────── */}
         <div className="lg:col-span-2 space-y-4">
-          {/* Stats */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
             <h2 className="font-bold text-base">Thống kê chờ duyệt</h2>
             <div className="grid grid-cols-2 gap-3">
@@ -301,13 +203,10 @@ export default function ConfirmAppointmentsPage() {
             </div>
           </div>
 
-          {/* Recently confirmed */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden sticky top-6">
             <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
               <h2 className="font-bold text-base">Đã xác nhận gần đây</h2>
-              <span className="text-xs px-2.5 py-1 bg-green-100 text-green-700 rounded-full font-bold">
-                {recentConfirmed.length}
-              </span>
+              <span className="text-xs px-2.5 py-1 bg-green-100 text-green-700 rounded-full font-bold">{recentConfirmed.length}</span>
             </div>
 
             {recentConfirmed.length === 0 ? (
@@ -324,13 +223,9 @@ export default function ConfirmAppointmentsPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold text-sm truncate">{r.name}</div>
-                      <div className="text-xs text-gray-400 truncate">
-                        {relativeLabel(r.date)} · {r.time} · {r.doctor}
-                      </div>
+                      <div className="text-xs text-gray-400 truncate">{relativeLabel(r.date)} · {r.time} · {r.doctor}</div>
                     </div>
-                    <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full font-bold flex-shrink-0">
-                      Đã duyệt
-                    </span>
+                    <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full font-bold flex-shrink-0">Đã duyệt</span>
                   </div>
                 ))}
               </div>
@@ -339,25 +234,20 @@ export default function ConfirmAppointmentsPage() {
         </div>
       </div>
 
-      {/* ── Detail Modal ─────────────────────────────────────────────────── */}
       {detail && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          onClick={e => e.target === e.currentTarget && setDetail(null)}>
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={e => e.target === e.currentTarget && setDetail(null)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-            {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
               <div>
                 <h2 className="font-bold text-base">Chi tiết lịch hẹn</h2>
                 <p className="text-xs text-gray-400 mt-0.5">#{detail.id}</p>
               </div>
-              <button onClick={() => setDetail(null)}
-                className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-400 transition-colors">
+              <button onClick={() => setDetail(null)} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-400 transition-colors">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
 
             <div className="p-6 space-y-5">
-              {/* Status */}
               <div className="flex justify-center">
                 <span className="px-4 py-1.5 bg-amber-100 text-amber-700 rounded-full text-sm font-bold flex items-center gap-2">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
@@ -365,15 +255,13 @@ export default function ConfirmAppointmentsPage() {
                 </span>
               </div>
 
-              {/* Patient */}
               <div className="bg-gray-50 rounded-xl p-4 space-y-2.5">
                 <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Bệnh nhân</div>
                 <Row label="Họ tên" value={detail.patientName} bold />
-                <Row label="Số điện thoại" value={detail.patientPhone} />
+                <Row label="Số điện thoại" value={detail.patientPhone ?? '—'} />
                 {detail.patientEmail && <Row label="Email" value={detail.patientEmail} />}
               </div>
 
-              {/* Appointment */}
               <div className="bg-gray-50 rounded-xl p-4 space-y-2.5">
                 <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Lịch khám</div>
                 <Row label="Ngày" value={`${relativeLabel(detail.date)} (${formatDate(detail.date)})`} bold />
@@ -382,12 +270,11 @@ export default function ConfirmAppointmentsPage() {
                 {detail.service && (
                   <>
                     <Row label="Dịch vụ" value={detail.service.name} />
-                    <Row label="Phí dịch vụ" value={formatMoney(detail.service.price)} />
+                    <Row label="Phí dịch vụ" value={formatMoney(detail.service.price ?? 0)} />
                   </>
                 )}
               </div>
 
-              {/* Symptoms */}
               {detail.symptoms && (
                 <div className="bg-blue-50 rounded-xl p-4">
                   <div className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-2">Triệu chứng</div>
@@ -395,9 +282,8 @@ export default function ConfirmAppointmentsPage() {
                 </div>
               )}
 
-              {/* Actions */}
               <div className="flex gap-3 pt-1">
-                <button onClick={() => handleCancel(detail.id)} disabled={actioning === detail.id}
+                <button onClick={() => rejectDisc.openWith(detail)} disabled={actioning === detail.id}
                   className="flex-1 py-3 border border-red-200 text-red-500 rounded-xl font-bold text-sm hover:bg-red-50 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                   Từ chối
@@ -414,11 +300,33 @@ export default function ConfirmAppointmentsPage() {
           </div>
         </div>
       )}
+      {rejectDisc.isOpen && rejectDisc.data && (
+        <ConfirmDialog
+          title="Từ chối lịch hẹn"
+          message={<>Từ chối lịch hẹn của <strong>{rejectDisc.data.patientName}</strong>? Bệnh nhân sẽ được thông báo huỷ.</>}
+          confirmLabel="Từ chối"
+          loadingLabel="Đang xử lý..."
+          loading={rejecting}
+          onClose={rejectDisc.close}
+          onConfirm={doReject}
+        />
+      )}
+
+      {confirmAllDisc.isOpen && (
+        <ConfirmDialog
+          title="Duyệt tất cả lịch hẹn"
+          message={<>Xác nhận tất cả <strong>{displayed.length}</strong> lịch hẹn đang chờ?</>}
+          variant="primary"
+          confirmLabel="Duyệt tất cả"
+          loadingLabel="Đang duyệt..."
+          loading={confirmingAll}
+          onClose={confirmAllDisc.close}
+          onConfirm={doConfirmAll}
+        />
+      )}
     </div>
   );
 }
-
-/* ── Sub-components ─────────────────────────────────────────────────────── */
 
 function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
   return (
@@ -431,8 +339,8 @@ function Row({ label, value, bold }: { label: string; value: string; bold?: bool
 
 function MiniStat({ label, value, color }: { label: string; value: number; color: string }) {
   const cfg: Record<string, string> = {
-    amber:  'bg-amber-50 text-amber-700',
-    blue:   'bg-blue-50 text-blue-700',
+    amber: 'bg-amber-50 text-amber-700',
+    blue: 'bg-blue-50 text-blue-700',
     indigo: 'bg-indigo-50 text-indigo-700',
     purple: 'bg-purple-50 text-purple-700',
   };

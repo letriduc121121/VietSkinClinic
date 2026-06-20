@@ -5,9 +5,9 @@ import com.vietskin.backend_springboot.modules.doctors.entity.Doctor;
 import com.vietskin.backend_springboot.modules.doctors.repository.DoctorRepository;
 import com.vietskin.backend_springboot.modules.users.dto.*;
 import com.vietskin.backend_springboot.modules.users.entity.*;
+import com.vietskin.backend_springboot.modules.users.mapper.UserMapper;
 import com.vietskin.backend_springboot.modules.users.repository.*;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.Caching;
@@ -20,7 +20,6 @@ import java.util.*;
 
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class UserService {
 
     private final UserRepository userRepository;
@@ -29,109 +28,44 @@ public class UserService {
     private final DoctorRepository doctorRepository;
     private final PasswordEncoder passwordEncoder;
 
-    // ── Admin: lấy tất cả users ─────────────────────────────
     @Cacheable(value = "users")
-    public List<Map<String, Object>> findAll() {
-        log.info("Cache MISS – truy vấn DB danh sách tất cả users");
+    public List<UserResponse> findAll() {
         return userRepository.findAll().stream()
                 .sorted(Comparator.comparing(User::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
-                .map(u -> {
-                    Map<String, Object> map = new LinkedHashMap<>();
-                    map.put("id", u.getId());
-                    map.put("username", u.getUsername());
-                    map.put("name", u.getName());
-                    map.put("email", u.getEmail());
-                    map.put("phone", u.getPhone());
-                    map.put("avatar", u.getAvatar());
-                    map.put("active", u.getActive());
-                    map.put("createdAt", u.getCreatedAt());
-                    map.put("role", Map.of("code", u.getRole().getCode(), "name", u.getRole().getName()));
-                    return map;
-                }).toList();
+                .map(UserMapper::toResponse)
+                .toList();
     }
 
-    // ── Lễ tân: tìm bệnh nhân theo SĐT ─────────────────────
-    public Map<String, Object> findByPhone(String phone) {
+    public ProfileResponse findByPhone(String phone) {
         User u = userRepository.findByPhone(phone)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Không tìm thấy bệnh nhân với SĐT này"));
         if (!"patient".equals(u.getRole().getCode())) {
             throw new AppException(HttpStatus.NOT_FOUND, "Không tìm thấy bệnh nhân với SĐT này");
         }
-        Map<String, Object> map = new LinkedHashMap<>();
-        map.put("id", u.getId());
-        map.put("name", u.getName());
-        map.put("phone", u.getPhone());
-        map.put("email", u.getEmail());
-        map.put("avatar", u.getAvatar());
-        map.put("role", Map.of("code", u.getRole().getCode(), "name", u.getRole().getName()));
-        return map;
+        return UserMapper.toSummary(u);
     }
 
-    // ── Admin: lấy 1 user ────────────────────────────────────
-    @Cacheable(value = "user_profile", key = "#id")
-    public Map<String, Object> findOne(Integer id) {
-        log.info("Cache MISS – truy vấn DB chi tiết user id={}", id);
+    @Cacheable(value = "user_detail", key = "#id")
+    public UserDetailResponse findOne(Integer id) {
         User u = userRepository.findById(id)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Người dùng không tồn tại"));
-
-        Map<String, Object> map = new LinkedHashMap<>();
-        map.put("id", u.getId());
-        map.put("username", u.getUsername());
-        map.put("name", u.getName());
-        map.put("email", u.getEmail());
-        map.put("phone", u.getPhone());
-        map.put("avatar", u.getAvatar());
-        map.put("active", u.getActive());
-        map.put("lastLoginAt", u.getLastLoginAt());
-        map.put("role", Map.of("code", u.getRole().getCode(), "name", u.getRole().getName()));
-        map.put("patientProfile", u.getPatientProfile());
-        return map;
+        return UserMapper.toDetail(u);
     }
 
-    // ── User hiện tại: lấy profile ──────────────────────────
     @Cacheable(value = "user_profile", key = "#id")
-    public Map<String, Object> getProfile(Integer id) {
-        log.info("Cache MISS – truy vấn DB profile user id={}", id);
+    public ProfileResponse getProfile(Integer id) {
         User u = userRepository.findById(id)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Người dùng không tồn tại"));
-
-        PatientProfile p = u.getPatientProfile();
-        Map<String, Object> map = new LinkedHashMap<>();
-        map.put("id", u.getId());
-        map.put("name", u.getName());
-        map.put("email", u.getEmail());
-        map.put("phone", u.getPhone());
-        map.put("avatar", u.getAvatar());
-        map.put("role", Map.of("code", u.getRole().getCode(), "name", u.getRole().getName()));
-
-        if (p != null) {
-            Map<String, Object> profile = new LinkedHashMap<>();
-            profile.put("dateOfBirth", p.getDateOfBirth());
-            profile.put("gender", p.getGender());
-            profile.put("address", p.getAddress());
-            profile.put("province", p.getProvince());
-            profile.put("district", p.getDistrict());
-            profile.put("ward", p.getWard());
-            profile.put("citizenId", p.getCitizenId());
-            profile.put("ethnicity", p.getEthnicity());
-            profile.put("bloodType", p.getBloodType());
-            profile.put("allergies", p.getAllergies());
-            profile.put("medicalHistory", p.getMedicalHistory());
-            profile.put("emergencyContact", p.getEmergencyContact());
-            map.put("patientProfile", profile);
-        } else {
-            map.put("patientProfile", null);
-        }
-        return map;
+        return UserMapper.toProfile(u);
     }
 
-    // ── User hiện tại: cập nhật profile ─────────────────────
     @Transactional
     @Caching(evict = {
             @CacheEvict(value = "users", allEntries = true),
-            @CacheEvict(value = "user_profile", key = "#id")
+            @CacheEvict(value = "user_profile", key = "#id"),
+            @CacheEvict(value = "user_detail", key = "#id")
     })
-    public Map<String, Object> updateProfile(Integer id, UpdateProfileRequest req) {
+    public ProfileResponse updateProfile(Integer id, UpdateProfileRequest req) {
         User u = userRepository.findById(id)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Người dùng không tồn tại"));
 
@@ -185,8 +119,7 @@ public class UserService {
         return getProfile(id);
     }
 
-    // ── Đổi mật khẩu ────────────────────────────────────────
-    public Map<String, String> changePassword(Integer id, ChangePasswordRequest req) {
+    public MessageResponse changePassword(Integer id, ChangePasswordRequest req) {
         User u = userRepository.findById(id)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Người dùng không tồn tại"));
 
@@ -195,33 +128,32 @@ public class UserService {
 
         u.setPasswordHash(passwordEncoder.encode(req.getNewPassword()));
         userRepository.save(u);
-        return Map.of("message", "Đổi mật khẩu thành công");
+        return new MessageResponse("Đổi mật khẩu thành công");
     }
 
-    // ── Admin: bật/tắt tài khoản ────────────────────────────
     @Caching(evict = {
             @CacheEvict(value = "users", allEntries = true),
-            @CacheEvict(value = "user_profile", key = "#id")
+            @CacheEvict(value = "user_profile", key = "#id"),
+            @CacheEvict(value = "user_detail", key = "#id")
     })
-    public Map<String, Object> toggleActive(Integer id) {
+    public StatusResponse toggleActive(Integer id) {
         User u = userRepository.findById(id)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Người dùng không tồn tại"));
         u.setActive(!u.getActive());
         userRepository.save(u);
-        return Map.of("id", u.getId(), "active", u.getActive());
+        return new StatusResponse(u.getId(), u.getActive());
     }
 
-    // ── Admin: xóa mềm ──────────────────────────────────────
     @Transactional
     @Caching(evict = {
             @CacheEvict(value = "users", allEntries = true),
-            @CacheEvict(value = "user_profile", key = "#id")
+            @CacheEvict(value = "user_profile", key = "#id"),
+            @CacheEvict(value = "user_detail", key = "#id")
     })
-    public Map<String, Object> deleteUser(Integer id) {
+    public StatusResponse deleteUser(Integer id) {
         User u = userRepository.findById(id)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Người dùng không tồn tại"));
 
-        // Nếu là doctor → deactivate doctor profile luôn
         doctorRepository.findByUserId(id).ifPresent(d -> {
             d.setActive(false);
             doctorRepository.save(d);
@@ -229,13 +161,12 @@ public class UserService {
 
         u.setActive(false);
         userRepository.save(u);
-        return Map.of("id", u.getId(), "active", false);
+        return new StatusResponse(u.getId(), false);
     }
 
-    // ── Admin: tạo user bất kỳ role ─────────────────────────
     @Transactional
     @CacheEvict(value = "users", allEntries = true)
-    public Map<String, Object> createUser(CreateUserRequest req) {
+    public ProfileResponse createUser(CreateUserRequest req) {
         if (userRepository.existsByPhone(req.getPhone()))
             throw new AppException(HttpStatus.CONFLICT, "Số điện thoại đã được đăng ký");
 
@@ -255,17 +186,12 @@ public class UserService {
                 .build();
         u = userRepository.save(u);
 
-        return Map.of(
-                "id", u.getId(),
-                "name", u.getName(),
-                "phone", u.getPhone(),
-                "role", Map.of("code", role.getCode(), "name", role.getName()));
+        return UserMapper.toSummary(u);
     }
 
-    // ── Admin: tạo nhân sự (doctor/receptionist) ────────────
     @Transactional
     @CacheEvict(value = "users", allEntries = true)
-    public Map<String, Object> createStaff(CreateStaffRequest req) {
+    public ProfileResponse createStaff(CreateStaffRequest req) {
         if (userRepository.existsByPhone(req.getPhone()))
             throw new AppException(HttpStatus.CONFLICT, "Số điện thoại đã được đăng ký");
 
@@ -292,7 +218,7 @@ public class UserService {
                     .degree(req.getDegree())
                     .experience(req.getExperience())
                     .description(req.getDescription())
-                    .keywords("[]")   // cột keywords NOT NULL — mặc định mảng JSON rỗng
+                    .keywords("[]")
                     .consultationFee(req.getConsultationFee() != null
                             ? req.getConsultationFee()
                             : java.math.BigDecimal.valueOf(150000))
@@ -301,10 +227,6 @@ public class UserService {
             doctorRepository.save(doctor);
         }
 
-        return Map.of(
-                "id", u.getId(),
-                "name", u.getName(),
-                "phone", u.getPhone(),
-                "role", Map.of("code", role.getCode(), "name", role.getName()));
+        return UserMapper.toSummary(u);
     }
 }

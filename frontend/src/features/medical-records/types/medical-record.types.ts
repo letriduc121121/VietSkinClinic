@@ -29,6 +29,7 @@ export interface MedicalRecord {
   createdAt: string;
   doctor?: { user: { name: string; avatar?: string | null } } | null;
   appointment?: {
+    id?: number;
     date: string;
     time?: string;
     patientName?: string;

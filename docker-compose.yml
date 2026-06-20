@@ -1,0 +1,75 @@
+# ============================================================
+#  VietSkin — Docker Compose (deploy lên VPS)
+#  Chạy:  docker compose up -d --build
+#  3 container: mysql + backend (Spring Boot) + frontend (Nginx)
+#  Các biến ${...} lấy từ file .env cùng thư mục (xem .env.example)
+# ============================================================
+services:
+
+  # ── Cơ sở dữ liệu MySQL ──────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    command: --performance-schema=OFF --innodb-buffer-pool-size=64M --innodb-log-buffer-size=1M
+    mem_limit: 256m
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      MYSQL_DATABASE: vietskin
+    volumes:
+      - mysql_data:/var/lib/mysql
+      # Chỉ tạo BẢNG (rỗng) lúc MySQL init lần đầu. KHÔNG seed ở đây:
+      # backend DataInitializer tự seed roles + tài khoản + lịch làm việc khi khởi động.
+      # (seed_20_each.sql cần roles có sẵn nên không chạy được ở bước này — dùng thủ công sau khi backend đã chạy.)
+      - ./backend_springboot/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${DB_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ── Backend Spring Boot ──────────────────────────────────
+  backend:
+    image: triduc12/vietskin-backend:latest
+    build: ./backend_springboot   # dùng khi build ở LOCAL; VPS chỉ pull image
+    restart: unless-stopped
+    mem_limit: 512m
+    depends_on:
+      mysql:
+        condition: service_healthy   # chờ MySQL sẵn sàng mới khởi động
+    environment:
+      SPRING_PROFILES_ACTIVE: prod   # bật Redis Upstash (local không set → cache in-memory)
+      JAVA_TOOL_OPTIONS: "-Xms128m -Xmx256m -XX:+UseG1GC"
+      DB_URL: jdbc:mysql://mysql:3306/vietskin?useSSL=false&serverTimezone=Asia/Ho_Chi_Minh&allowPublicKeyRetrieval=true
+      DB_USERNAME: root
+      DB_PASSWORD: ${DB_PASSWORD}
+      CORS_ORIGIN: ${CORS_ORIGIN}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      GROQ_MODEL: ${GROQ_MODEL}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GEMINI_MODEL: ${GEMINI_MODEL}
+      CEREBRAS_API_KEY: ${CEREBRAS_API_KEY}
+      CEREBRAS_MODEL: ${CEREBRAS_MODEL}
+    ports:
+      - "8080:8080"
+
+  # ── Frontend React (Nginx) ───────────────────────────────
+  frontend:
+    image: triduc12/vietskin-frontend:latest
+    build: ./frontend   # dùng khi build ở LOCAL; VPS chỉ pull image
+    restart: unless-stopped
+    mem_limit: 64m
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+
+volumes:
+  mysql_data:

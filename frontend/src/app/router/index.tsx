@@ -24,6 +24,7 @@ import CollectPaymentPage from '@/pages/receptionist/CollectPaymentPage';
 // Doctor
 import DoctorDashboard from '@/pages/doctor/DashboardPage';
 import TodaySchedulePage from '@/pages/doctor/TodaySchedulePage';
+import WorkSchedulePage from '@/pages/doctor/WorkSchedulePage';
 import ExaminePage from '@/pages/doctor/ExaminePage';
 import HistoryPage from '@/pages/doctor/HistoryPage';
 
@@ -73,6 +74,8 @@ const RequireAuth = ({ roles }: { roles: string[] }) => {
   return <Outlet />;
 };
 
+import ChatbotWidget from '@/features/chatbot/components/ChatbotWidget';
+
 export default function AppRouter() {
   return (
     <BrowserRouter>
@@ -116,6 +119,7 @@ export default function AppRouter() {
           <Route element={<DashboardLayout />}>
             <Route path="/doctor/dashboard" element={<DoctorDashboard />} />
             <Route path="/doctor/today" element={<TodaySchedulePage />} />
+            <Route path="/doctor/work-schedule" element={<WorkSchedulePage />} />
             <Route path="/doctor/history" element={<HistoryPage />} />
             <Route path="/doctor/examine/:appointmentId" element={<ExaminePage />} />
             <Route path="/doctor/profile" element={<ProfilePage />} />
@@ -142,6 +146,7 @@ export default function AppRouter() {
         {/* Catch-all */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      <ChatbotWidget />
     </BrowserRouter>
   );
 }

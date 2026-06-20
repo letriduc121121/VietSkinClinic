@@ -4,6 +4,7 @@ import com.cloudinary.Cloudinary;
 import com.cloudinary.Transformation;
 import com.cloudinary.utils.ObjectUtils;
 import com.vietskin.backend_springboot.common.exception.AppException;
+import com.vietskin.backend_springboot.common.utils.SecurityUtils;
 import com.vietskin.backend_springboot.modules.doctors.repository.DoctorRepository;
 import com.vietskin.backend_springboot.modules.medical_record_images.entity.MedicalRecordImage;
 import com.vietskin.backend_springboot.modules.medical_record_images.repository.MedicalRecordImageRepository;
@@ -59,6 +60,10 @@ public class MedicalRecordImageService {
     }
 
     public List<MedicalRecordImage> findByMedicalRecord(Integer medicalRecordId) {
+        // Bệnh nhân chỉ được xem ảnh thuộc bệnh án của chính mình (chống IDOR)
+        MedicalRecord record = medicalRecordRepository.findById(medicalRecordId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Bệnh án không tồn tại"));
+        SecurityUtils.requireSelfIfPatient(record.getPatient() != null ? record.getPatient().getId() : null);
         return imageRepository.findByMedicalRecordIdOrderByCreatedAtAsc(medicalRecordId);
     }
 

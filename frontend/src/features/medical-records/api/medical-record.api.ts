@@ -16,9 +16,12 @@ export const medicalRecordApi = {
   getByPatient: (patientId: number): Promise<MedicalRecord[]> =>
     api.get(`/medical-records/patient/${patientId}`).then(unwrap),
 
-  /** Hồ sơ theo appointmentId */
+  /** Hồ sơ theo appointmentId — null nếu chưa lập bệnh án */
   getByAppointment: (appointmentId: number): Promise<MedicalRecord | null> =>
-    api.get('/medical-records', { params: { appointmentId } }).then(unwrap),
+    api.get('/medical-records', { params: { appointmentId } }).then((res) => {
+      const d = res.data?.data ?? null;
+      return d && d.id ? (d as MedicalRecord) : null;
+    }),
 
   /** Tạo hồ sơ bệnh án mới */
   create: (dto: CreateMedicalRecordDto): Promise<MedicalRecord> =>

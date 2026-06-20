@@ -64,13 +64,15 @@ body {
   @apply bg-main-bg text-main-text antialiased transition-colors duration-300;
 }
 
-h1,
-h2,
-h3,
-h4,
-h5,
-h6 {
-  @apply font-bold text-medical-dark;
+@layer base {
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-bold text-medical-dark;
+  }
 }
 
 .shadow-premium {

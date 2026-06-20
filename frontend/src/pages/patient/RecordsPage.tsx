@@ -1,66 +1,14 @@
-import { useState, useEffect } from 'react';
-import { medicalRecordApi } from '@/features/medical-records/api/medical-record.api';
-import type { MedicalRecord, Prescription } from '@/features/medical-records/types/medical-record.types';
+import { useState } from 'react';
+import type { Prescription } from '@/features/medical-records/types/medical-record.types';
 import type { MedicalRecordImage } from '@/features/medical-record-images/types/medical-record-image.types';
-
-const fmtDate = (iso: string) => {
-  const d = new Date(iso);
-  return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
-};
-
-const formatInstruction = (dosage?: string | null, frequency?: string | null, duration?: string | null) => {
-  const parts: string[] = [];
-  if (dosage) {
-    const d = dosage.trim();
-    if (d.match(/^\d+(\.\d+)?$/)) {
-      parts.push(`Uống/Dùng: ${d} viên`);
-    } else {
-      parts.push(d);
-    }
-  }
-  if (frequency) {
-    const f = frequency.trim();
-    if (f.match(/^\d+$/)) {
-      parts.push(`ngày ${f} lần`);
-    } else {
-      parts.push(f);
-    }
-  }
-  if (duration) {
-    const dur = duration.trim();
-    if (dur.match(/^\d+$/)) {
-      parts.push(`trong ${dur} ngày`);
-    } else {
-      parts.push(dur);
-    }
-  }
-  return parts.filter(Boolean).join(', ');
-};
+import { usePatientRecords } from '@/features/medical-records/hooks/usePatientRecords';
+import { formatInstruction, fmtExamDate as fmtDate } from '@/features/medical-records/lib/exam';
 
 export default function RecordsPage() {
-  const [records,       setRecords]       = useState<MedicalRecord[]>([]);
-  const [loading,       setLoading]       = useState(true);
-  const [selected,      setSelected]      = useState<MedicalRecord | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [lightbox,      setLightbox]      = useState<MedicalRecordImage | null>(null);
-  const [fromDate,      setFromDate]      = useState('');
-  const [toDate,        setToDate]        = useState('');
-
-  useEffect(() => {
-    medicalRecordApi.getMy()
-      .then(data => setRecords(Array.isArray(data) ? data : []))
-      .finally(() => setLoading(false));
-  }, []);
-
-  const loadDetail = async (id: number) => {
-    setDetailLoading(true);
-    try {
-      const data = await medicalRecordApi.getById(id);
-      setSelected(data);
-    } finally {
-      setDetailLoading(false);
-    }
-  };
+  const { records, loading, selected, detailLoading, loadDetail } = usePatientRecords();
+  const [lightbox, setLightbox] = useState<MedicalRecordImage | null>(null);
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
 
   const images: MedicalRecordImage[] = selected?.images ?? [];
   const prescriptions: Prescription[] = selected?.prescriptions ?? [];

@@ -1,20 +1,7 @@
-import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/app/providers/AuthProvider';
-import { appointmentApi } from '@/features/appointments/api/appointment.api';
-import { invoiceApi } from '@/features/invoices/api/invoice.api';
-import { statsApi } from '@/features/stats/api/stats.api';
-import type { Appointment } from '@/features/appointments/types/appointment.types';
-import type { PatientStats } from '@/features/stats/types/stats.types';
-
-interface MonthData { month: string; revenue: number }
-interface RevenueStatsData {
-  monthly: MonthData[];
-  byMethod: Record<string, number>;
-  todayTotal: number;
-  monthTotal: number;
-  grandTotal: number;
-}
+import { fmtVnd, fmtShort } from '@/shared/lib/format';
+import { useAdminDashboard } from '@/features/dashboard/hooks/useAdminDashboard';
 
 const STATUS: Record<string, { label: string; cls: string }> = {
   pending:     { label: 'Chờ xác nhận', cls: 'bg-amber-100 text-amber-700'   },
@@ -26,13 +13,6 @@ const STATUS: Record<string, { label: string; cls: string }> = {
   no_show:     { label: 'Không đến',    cls: 'bg-gray-100 text-gray-600'     },
 };
 
-const fmt = (n: number) => n.toLocaleString('vi-VN') + 'đ';
-const fmtShort = (n: number) => {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-  if (n >= 1_000)     return (n / 1_000).toFixed(0) + 'K';
-  return String(n);
-};
-// "2026-06" -> "T6" — backend không gửi sẵn nhãn nên tự suy ra.
 const monthLabel = (ym: string) => 'T' + Number(ym.slice(5, 7));
 
 export default function AdminDashboard() {
@@ -40,34 +20,8 @@ export default function AdminDashboard() {
   const today = new Date().toLocaleDateString('vi-VN', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
   });
-  const todayStr = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
 
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [patientStats, setPatientStats] = useState<PatientStats | null>(null);
-  const [revenueStats, setRevenueStats] = useState<RevenueStatsData | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const load = async () => {
-      const [apptRes, pStatsRes, rStatsRes] = await Promise.allSettled([
-        appointmentApi.getList({ date: todayStr }),
-        statsApi.getPatientStats(),
-        invoiceApi.getStats()
-      ]);
-
-      if (apptRes.status === 'fulfilled' && Array.isArray(apptRes.value)) {
-        setAppointments(apptRes.value);
-      }
-      if (pStatsRes.status === 'fulfilled') {
-        setPatientStats(pStatsRes.value as any);
-      }
-      if (rStatsRes.status === 'fulfilled') {
-        setRevenueStats(rStatsRes.value as any);
-      }
-      setLoading(false);
-    };
-    load();
-  }, [todayStr]);
+  const { appointments, patientStats, revenueStats, loading } = useAdminDashboard();
 
   const maxRevenue = Math.max(...(revenueStats?.monthly.map(m => m.revenue) ?? [1]), 1);
   const totalStatus = patientStats ? Object.values(patientStats.appointmentStatusDist).reduce((s, v) => s + v, 0) || 1 : 1;
@@ -79,8 +33,8 @@ export default function AdminDashboard() {
   const totalPatients = patientStats?.totalPatients ?? 0;
 
   const summaryCards = [
-    { label: 'Doanh thu tháng này', value: fmt(monthRevenue), color: 'text-indigo-700', bg: 'bg-indigo-50 border-indigo-100', icon: '💰' },
-    { label: 'Doanh thu hôm nay', value: fmt(todayRevenue), color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-100', icon: '💵' },
+    { label: 'Doanh thu tháng này', value: fmtVnd(monthRevenue), color: 'text-indigo-700', bg: 'bg-indigo-50 border-indigo-100', icon: '💰' },
+    { label: 'Doanh thu hôm nay', value: fmtVnd(todayRevenue), color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-100', icon: '💵' },
     { label: 'Tổng số bệnh nhân', value: totalPatients.toLocaleString('vi-VN'), color: 'text-blue-700', bg: 'bg-blue-50 border-blue-100', icon: '👤' },
     { label: 'Lịch hẹn hôm nay', value: appointments.length.toString(), color: 'text-amber-700', bg: 'bg-amber-50 border-amber-100', icon: '📅' },
   ];
@@ -132,7 +86,7 @@ export default function AdminDashboard() {
                           <div
                             className={`w-full rounded-t-md transition-all duration-500 ${isCurrentMonth ? 'bg-indigo-600' : 'bg-indigo-200 group-hover:bg-indigo-400'}`}
                             style={{ height: pct > 0 ? `${Math.max(pct, 4)}%` : '4px' }}
-                            title={fmt(m.revenue)}
+                            title={fmtVnd(m.revenue)}
                           />
                         </div>
                         <div className={`text-xs font-semibold ${isCurrentMonth ? 'text-indigo-700' : 'text-gray-400'}`}>

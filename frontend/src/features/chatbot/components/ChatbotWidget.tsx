@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { MessageCircle, X, Send, Bot, User } from 'lucide-react';
-import { streamChatMessage, type ChatMessage } from '@/features/chatbot/api/chatbot.api';
-import ChatCards from '@/features/chatbot/components/ChatCards';
+import { streamChatMessage, fetchChatHistory, type ChatMessage, type CardEvent } from '@/features/chatbot/api/chatbot.api';
+import ChatCards, { type BookRequest } from '@/features/chatbot/components/ChatCards';
+import { useAuth } from '@/app/providers/AuthProvider';
 
 const WELCOME: ChatMessage = {
   role: 'assistant',
@@ -9,13 +11,21 @@ const WELCOME: ChatMessage = {
     'Xin chào! Mình là trợ lý ảo của VietSkin 👋. Mình có thể giúp bạn về đặt lịch khám, dịch vụ, bác sĩ và giờ làm việc. Bạn cần hỗ trợ gì ạ?',
 };
 
-const SUGGESTIONS = ['Đặt lịch khám thế nào?', 'Giờ làm việc?', 'Có những dịch vụ gì?'];
+const SUGGESTIONS = [
+  'Đặt lịch khám thế nào?',
+  'Có những bác sĩ nào?',
+  'Có những dịch vụ gì?',
+  'Bảng giá dịch vụ?',
+  'Giờ làm việc?',
+];
 
 /**
  * Widget chatbot nổi ở góc dưới bên phải — tự chứa, không phụ thuộc layout.
  * Mount 1 lần trong App.tsx là dùng được trên toàn site.
  */
 export default function ChatbotWidget() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME]);
   const [input, setInput] = useState('');
@@ -24,6 +34,35 @@ export default function ChatbotWidget() {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  /** Điều hướng tới trang đặt lịch kèm thông tin đã chọn sẵn (doctorId, date, time). */
+  const handleBook = useCallback(
+    (req: BookRequest) => {
+      const params = new URLSearchParams();
+      if (req.doctorId) params.set('doctorId', String(req.doctorId));
+      if (req.date) params.set('date', req.date);
+      if (req.time) params.set('time', req.time);
+      setOpen(false);
+      navigate(`/patient/booking?${params.toString()}`);
+    },
+    [navigate],
+  );
+
+  // Khôi phục lịch sử chat trong ngày theo trạng thái đăng nhập:
+  // đăng nhập → tải hội thoại hôm nay; đăng xuất → xóa khung chat.
+  useEffect(() => {
+    if (!user) {
+      conversationId.current = null;
+      setMessages([WELCOME]);
+      return;
+    }
+    fetchChatHistory()
+      .then((h) => {
+        conversationId.current = h.conversationId;
+        setMessages(h.messages.length ? [WELCOME, ...h.messages] : [WELCOME]);
+      })
+      .catch(() => {});
+  }, [user]);
 
   // Tự cuộn xuống tin nhắn mới nhất
   useEffect(() => {
@@ -54,7 +93,7 @@ export default function ChatbotWidget() {
         });
 
       // Gắn 1 card (do tool trả về) vào bong bóng assistant đang stream
-      const attachCard = (card: Parameters<NonNullable<Parameters<typeof streamChatMessage>[2]['onCard']>>[0]) =>
+      const attachCard = (card: CardEvent) =>
         setMessages((prev) => {
           const copy = [...prev];
           const last = copy[copy.length - 1];
@@ -128,7 +167,7 @@ export default function ChatbotWidget() {
           </div>
 
           {/* Danh sách tin nhắn */}
-          <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto bg-[#F8FAFC] p-4">
+          <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto overflow-x-hidden bg-[#F8FAFC] p-4">
             {messages.map((m, i) => {
               const isUser = m.role === 'user';
               const hasCards = !!m.cards?.length;
@@ -155,7 +194,7 @@ export default function ChatbotWidget() {
                         {m.content}
                       </div>
                     )}
-                    {hasCards && <ChatCards cards={m.cards!} />}
+                    {hasCards && <ChatCards cards={m.cards!} onBook={handleBook} />}
                   </div>
                 </div>
               );
@@ -177,20 +216,20 @@ export default function ChatbotWidget() {
               </div>
             )}
 
-            {/* Gợi ý câu hỏi (chỉ hiện ở lần đầu) */}
-            {messages.length === 1 && !loading && (
-              <div className="flex flex-wrap gap-2 pt-1">
-                {SUGGESTIONS.map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => send(s)}
-                    className="rounded-full border border-[#6EC1B4]/40 bg-white px-3 py-1.5 text-xs text-[#1a3a5c] transition-colors hover:bg-[#6EC1B4]/10"
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            )}
+          </div>
+
+          {/* Gợi ý câu hỏi cố định để người dùng luôn có thể hỏi tiếp */}
+          <div className="border-t border-gray-100 bg-white px-4 py-2 flex flex-wrap gap-1.5">
+            {SUGGESTIONS.map((s) => (
+              <button
+                key={s}
+                onClick={() => send(s)}
+                disabled={loading}
+                className="rounded-full border border-[#6EC1B4]/30 bg-white px-2.5 py-1 text-xs text-[#1a3a5c] transition-colors hover:bg-[#6EC1B4]/10 disabled:opacity-50 disabled:pointer-events-none"
+              >
+                {s}
+              </button>
+            ))}
           </div>
 
           {/* Ô nhập */}

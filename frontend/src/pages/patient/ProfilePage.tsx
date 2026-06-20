@@ -1,133 +1,28 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { useAuth } from '@/app/providers/AuthProvider';
-import { userApi } from '@/features/users/api/user.api';
-import { uploadFile } from '@/shared/lib/upload';
-
-interface Profile {
-  id: number;
-  name: string;
-  email: string | null;
-  phone: string;
-  avatar: string | null;
-  role: { code: string; name: string };
-  patientProfile: {
-    dateOfBirth: string | null;
-    gender: string | null;
-    address: string | null;
-    province: string | null;
-    district: string | null;
-    ward: string | null;
-    citizenId: string | null;
-    ethnicity: string | null;
-    bloodType: string | null;
-    allergies: string | null;
-    medicalHistory: string | null;
-    emergencyContact: string | null;
-  } | null;
-}
+import { useProfile } from '@/features/users/hooks/useProfile';
 
 const BLOOD_TYPES = ['A+','A-','B+','B-','AB+','AB-','O+','O-'];
 const GENDERS = [{ value: 'male', label: 'Nam' }, { value: 'female', label: 'Nữ' }, { value: 'other', label: 'Khác' }];
 
 export default function ProfilePage() {
   const { user } = useAuth();
-  const roleCode = user?.role ? (typeof user.role === 'string' ? user.role : user.role.code) : '';
-  const isPatient = roleCode === 'patient';
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const isPatient = user?.role?.code === 'patient';
+  const {
+    profile, loading, form, setForm, saving, success, error, save,
+    avatarUploading, avatarProgress, uploadAvatar,
+    pwForm, setPwForm, pwSaving, pwError, pwSuccess, changePassword, clearMessages,
+  } = useProfile();
   const [tab, setTab] = useState<'info' | 'medical' | 'password'>('info');
-  const [success, setSuccess] = useState('');
-  const [error, setError] = useState('');
-
-  const [form, setForm] = useState({
-    name: '', email: '', avatar: '',
-    dateOfBirth: '', gender: '', address: '', province: '', district: '', ward: '',
-    citizenId: '', ethnicity: '', bloodType: '', allergies: '', medicalHistory: '', emergencyContact: '',
-  });
-  const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirm: '' });
-  const [pwError, setPwError] = useState('');
-  const [pwSuccess, setPwSuccess] = useState('');
-  const [pwSaving, setPwSaving] = useState(false);
-  const [avatarUploading, setAvatarUploading] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
-
-  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setAvatarUploading(true);
-    try {
-      const url = await uploadFile(file, 'vietskin/avatars');
-      setForm(f => ({ ...f, avatar: url }));
-      await userApi.updateProfile({ avatar: url });
-      setSuccess('Cập nhật ảnh đại diện thành công!');
-      setTimeout(() => setSuccess(''), 3000);
-    } catch {
-      setError('Upload ảnh thất bại');
-    } finally {
-      setAvatarUploading(false);
-      e.target.value = '';
-    }
-  };
-
-  useEffect(() => {
-    userApi.getProfile().then(r => {
-      const p: Profile = r as any;
-      setProfile(p);
-      setForm({
-        name:             p.name ?? '',
-        email:            p.email ?? '',
-        avatar:           p.avatar ?? '',
-        dateOfBirth:      p.patientProfile?.dateOfBirth ? p.patientProfile.dateOfBirth.slice(0, 10) : '',
-        gender:           p.patientProfile?.gender ?? '',
-        address:          p.patientProfile?.address ?? '',
-        province:         p.patientProfile?.province ?? '',
-        district:         p.patientProfile?.district ?? '',
-        ward:             p.patientProfile?.ward ?? '',
-        citizenId:        p.patientProfile?.citizenId ?? '',
-        ethnicity:        p.patientProfile?.ethnicity ?? '',
-        bloodType:        p.patientProfile?.bloodType ?? '',
-        allergies:        p.patientProfile?.allergies ?? '',
-        medicalHistory:   p.patientProfile?.medicalHistory ?? '',
-        emergencyContact: p.patientProfile?.emergencyContact ?? '',
-      });
-    }).finally(() => setLoading(false));
-  }, []);
 
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }));
 
-  const handleSave = async () => {
-    setSaving(true); setSuccess(''); setError('');
-    try {
-      await userApi.updateProfile(form);
-      setSuccess('Cập nhật thông tin thành công!');
-      setTimeout(() => setSuccess(''), 3000);
-    } catch (e: unknown) {
-      setError((e as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Lưu thất bại');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleChangePassword = async () => {
-    setPwError(''); setPwSuccess('');
-    if (pwForm.newPassword !== pwForm.confirm) { setPwError('Mật khẩu xác nhận không khớp'); return; }
-    if (pwForm.newPassword.length < 6) { setPwError('Mật khẩu mới phải ít nhất 6 ký tự'); return; }
-    setPwSaving(true);
-    try {
-      await userApi.changePassword({
-        currentPassword: pwForm.currentPassword,
-        newPassword: pwForm.newPassword,
-      });
-      setPwSuccess('Đổi mật khẩu thành công!');
-      setPwForm({ currentPassword: '', newPassword: '', confirm: '' });
-      setTimeout(() => setPwSuccess(''), 3000);
-    } catch (e: unknown) {
-      setPwError((e as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Đổi mật khẩu thất bại');
-    } finally {
-      setPwSaving(false);
-    }
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) uploadAvatar(file);
+    e.target.value = '';
   };
 
   if (loading) return (
@@ -159,7 +54,7 @@ export default function ProfilePage() {
               title="Đổi ảnh đại diện"
             >
               {avatarUploading
-                ? <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ? <span className="text-[9px] font-bold">{avatarProgress ?? 0}%</span>
                 : <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536M9 13l6-6m-6 6H6v-3l9-9 3 3-9 9z" /></svg>
               }
             </button>
@@ -182,7 +77,7 @@ export default function ProfilePage() {
         {([['info','👤 Thông tin cơ bản'], ['medical','🏥 Y tế'], ['password','🔒 Mật khẩu']] as const).map(([k, label]) => (
           <button
             key={k}
-            onClick={() => { setTab(k); setSuccess(''); setError(''); }}
+            onClick={() => { setTab(k); clearMessages(); }}
             className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all ${
               tab === k ? 'bg-white shadow-sm text-main-text' : 'text-gray-500 hover:text-main-text'
             }`}
@@ -231,7 +126,7 @@ export default function ProfilePage() {
               <Field label="Tỉnh/Thành" value={form.province} onChange={set('province')} placeholder="Hà Nội" />
             </div>
           </div>
-          <SaveBar saving={saving} success={success} error={error} onSave={handleSave} />
+          <SaveBar saving={saving} success={success} error={error} onSave={save} />
         </div>
       )}
 
@@ -252,7 +147,7 @@ export default function ProfilePage() {
           <TextareaField label="Dị ứng (thuốc, thực phẩm...)" value={form.allergies} onChange={set('allergies')} placeholder="Ví dụ: Dị ứng Penicillin, tôm, cua..." />
           <TextareaField label="Tiền sử bệnh" value={form.medicalHistory} onChange={set('medicalHistory')} placeholder="Ví dụ: Viêm da cơ địa từ nhỏ, cao huyết áp từ 2020..." />
           <Field label="Người liên hệ khẩn cấp" value={form.emergencyContact} onChange={set('emergencyContact')} placeholder="Nguyễn Thị A — 0901 111 111 — Mẹ" />
-          <SaveBar saving={saving} success={success} error={error} onSave={handleSave} />
+          <SaveBar saving={saving} success={success} error={error} onSave={save} />
         </div>
       )}
 
@@ -268,7 +163,7 @@ export default function ProfilePage() {
           {pwError && <div className="text-sm text-red-500 bg-red-50 px-4 py-3 rounded-xl">{pwError}</div>}
           {pwSuccess && <div className="text-sm text-green-600 bg-green-50 px-4 py-3 rounded-xl">{pwSuccess}</div>}
           <button
-            onClick={handleChangePassword}
+            onClick={changePassword}
             disabled={pwSaving || !pwForm.currentPassword || !pwForm.newPassword}
             className="w-full py-3 bg-primary text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >

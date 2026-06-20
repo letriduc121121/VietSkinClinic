@@ -3,7 +3,9 @@ package com.vietskin.backend_springboot.modules.rooms.service;
 import com.vietskin.backend_springboot.common.exception.AppException;
 import com.vietskin.backend_springboot.modules.doctors.repository.DoctorRepository;
 import com.vietskin.backend_springboot.modules.rooms.dto.CreateRoomRequest;
+import com.vietskin.backend_springboot.modules.rooms.dto.RoomResponse;
 import com.vietskin.backend_springboot.modules.rooms.entity.Room;
+import com.vietskin.backend_springboot.modules.rooms.mapper.RoomMapper;
 import com.vietskin.backend_springboot.modules.rooms.repository.RoomRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -18,19 +20,17 @@ public class RoomService {
     private final RoomRepository roomRepository;
     private final DoctorRepository doctorRepository;
 
-    public List<Room> findAll() {
-        return roomRepository.findAll()
-                .stream()
-                .sorted((a, b) -> a.getName().compareToIgnoreCase(b.getName()))
-                .toList();
+    public List<RoomResponse> findAll() {
+        return RoomMapper.toList(roomRepository.findAllFlat());
     }
 
-    public Room findOne(Integer id) {
-        return roomRepository.findById(id)
+    public RoomResponse findOne(Integer id) {
+        return roomRepository.findFlatById(id)
+                .map(RoomMapper::toResponse)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Phòng khám không tồn tại"));
     }
 
-    public Room create(CreateRoomRequest req) {
+    public RoomResponse create(CreateRoomRequest req) {
         Room room = new Room();
         room.setName(req.getName());
         room.setActive(true);
@@ -39,11 +39,11 @@ public class RoomService {
             doctorRepository.findById(req.getDoctorId()).ifPresent(room::setDoctor);
         }
 
-        return roomRepository.save(room);
+        return responseOf(roomRepository.save(room));
     }
 
-    public Room update(Integer id, CreateRoomRequest req) {
-        Room room = findOne(id);
+    public RoomResponse update(Integer id, CreateRoomRequest req) {
+        Room room = findEntity(id);
 
         if (req.getName()   != null) room.setName(req.getName());
         if (req.getActive() != null) room.setActive(req.getActive());
@@ -56,7 +56,7 @@ public class RoomService {
             room.setDoctor(null);
         }
 
-        return roomRepository.save(room);
+        return responseOf(roomRepository.save(room));
     }
 
     /**
@@ -64,8 +64,8 @@ public class RoomService {
      * Luật nghiệp vụ: KHÔNG cho tắt phòng khi vẫn còn bác sĩ phụ trách —
      * phải gỡ bác sĩ khỏi phòng trước. Bật lại thì không ràng buộc.
      */
-    public Room toggleActive(Integer id) {
-        Room room = findOne(id);
+    public RoomResponse toggleActive(Integer id) {
+        Room room = findEntity(id);
         boolean currentlyActive = Boolean.TRUE.equals(room.getActive());
 
         if (currentlyActive && room.getDoctor() != null) {
@@ -74,20 +74,31 @@ public class RoomService {
         }
 
         room.setActive(!currentlyActive);
-        return roomRepository.save(room);
+        return responseOf(roomRepository.save(room));
     }
 
     /**
      * "Xoá" phòng = tắt mềm (active=false), không xoá hẳn khỏi DB.
      * Cũng áp dụng luật phải gỡ bác sĩ trước khi tắt.
      */
-    public Room remove(Integer id) {
-        Room room = findOne(id);
+    public RoomResponse remove(Integer id) {
+        Room room = findEntity(id);
         if (room.getDoctor() != null) {
             throw new AppException(HttpStatus.BAD_REQUEST,
                     "Vui lòng gỡ bác sĩ phụ trách khỏi phòng trước khi tắt phòng.");
         }
         room.setActive(false);
-        return roomRepository.save(room);
+        return responseOf(roomRepository.save(room));
+    }
+
+    // ── Nội bộ ──────────────────────────────────────────────
+    private Room findEntity(Integer id) {
+        return roomRepository.findById(id)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Phòng khám không tồn tại"));
+    }
+
+    /** Nạp lại bằng projection để trả response đầy đủ (kèm bác sĩ). */
+    private RoomResponse responseOf(Room room) {
+        return roomRepository.findFlatById(room.getId()).map(RoomMapper::toResponse).orElse(null);
     }
 }

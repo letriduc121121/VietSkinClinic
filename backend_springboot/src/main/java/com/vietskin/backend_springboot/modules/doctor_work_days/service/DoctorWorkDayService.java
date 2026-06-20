@@ -1,10 +1,14 @@
 package com.vietskin.backend_springboot.modules.doctor_work_days.service;
 
+import com.vietskin.backend_springboot.common.enums.AppointmentStatus;
 import com.vietskin.backend_springboot.common.exception.AppException;
 import com.vietskin.backend_springboot.modules.appointments.repository.AppointmentRepository;
 import com.vietskin.backend_springboot.modules.doctor_work_days.dto.BulkCreateWorkDayRequest;
+import com.vietskin.backend_springboot.modules.doctor_work_days.dto.BulkCreateWorkDayResponse;
 import com.vietskin.backend_springboot.modules.doctor_work_days.dto.CreateWorkDayRequest;
+import com.vietskin.backend_springboot.modules.doctor_work_days.dto.WorkDayResponse;
 import com.vietskin.backend_springboot.modules.doctor_work_days.entity.DoctorWorkDay;
+import com.vietskin.backend_springboot.modules.doctor_work_days.mapper.WorkDayMapper;
 import com.vietskin.backend_springboot.modules.doctor_work_days.repository.DoctorWorkDayRepository;
 import com.vietskin.backend_springboot.modules.rooms.repository.RoomRepository;
 import lombok.RequiredArgsConstructor;
@@ -44,8 +48,7 @@ public class DoctorWorkDayService {
                         "Bác sĩ chưa được phân phòng — vui lòng gán phòng trước"));
     }
 
-    // ── Xem lịch theo tháng ─────────────────────────────────
-    public List<Map<String, Object>> findByMonth(String month, Integer doctorId) {
+    public List<WorkDayResponse> findByMonth(String month, Integer doctorId) {
         YearMonth ym = YearMonth.parse(month);
         LocalDate from = ym.atDay(1);
         LocalDate to   = ym.atEndOfMonth();
@@ -56,21 +59,10 @@ public class DoctorWorkDayService {
                 .filter(w -> !w.getDate().isBefore(from) && !w.getDate().isAfter(to))
                 .toList();
 
-        return list.stream().map(w -> {
-            Map<String, Object> map = new LinkedHashMap<>();
-            map.put("id", w.getId());
-            map.put("date", w.getDate());
-            map.put("doctorId", w.getDoctor().getId());
-            map.put("doctorName", w.getDoctor().getUser() != null
-                    ? w.getDoctor().getUser().getName() : "");
-            map.put("roomId", w.getRoom().getId());
-            map.put("roomName", w.getRoom().getName());
-            return map;
-        }).toList();
+        return list.stream().map(WorkDayMapper::toResponse).toList();
     }
 
-    // ── Phân 1 ngày ─────────────────────────────────────────
-    public Map<String, Object> create(CreateWorkDayRequest req, Integer adminId) {
+    public WorkDayResponse create(CreateWorkDayRequest req, Integer adminId) {
         validateWeekday(req.getDate());
         Integer roomId = resolveRoom(req.getDoctorId(), req.getRoomId());
 
@@ -78,69 +70,38 @@ public class DoctorWorkDayService {
             throw new AppException(HttpStatus.CONFLICT,
                     "Bác sĩ đã có lịch làm ngày " + req.getDate());
 
-        DoctorWorkDay wd = new DoctorWorkDay();
-        wd.setDate(req.getDate());
-        wd.setCreatedBy(adminId);
-
-        // Set doctor và room qua id
-        var doctor = new com.vietskin.backend_springboot.modules.doctors.entity.Doctor();
-        doctor.setId(req.getDoctorId());
-        wd.setDoctor(doctor);
-
-        var room = new com.vietskin.backend_springboot.modules.rooms.entity.Room();
-        room.setId(roomId);
-        wd.setRoom(room);
-
+        DoctorWorkDay wd = buildWorkDay(req.getDoctorId(), roomId, req.getDate(), adminId);
         workDayRepository.save(wd);
-        return Map.of(
-                "id", wd.getId(),
-                "doctorId", req.getDoctorId(),
-                "roomId", roomId,
-                "date", req.getDate()
-        );
+
+        return new WorkDayResponse(wd.getId(), req.getDate(), req.getDoctorId(), null, roomId, null);
     }
 
-    // ── Phân nhiều ngày (bulk) ───────────────────────────────
-    public Map<String, Object> bulkCreate(BulkCreateWorkDayRequest req, Integer adminId) {
+    public BulkCreateWorkDayResponse bulkCreate(BulkCreateWorkDayRequest req, Integer adminId) {
         List<LocalDate> uniqueDates = req.getDates().stream().distinct().toList();
         for (LocalDate d : uniqueDates) validateWeekday(d);
 
         Integer roomId = resolveRoom(req.getDoctorId(), req.getRoomId());
 
-        List<Object> success = new ArrayList<>();
-        List<Object> failed  = new ArrayList<>();
+        List<BulkCreateWorkDayResponse.Created> success = new ArrayList<>();
+        List<BulkCreateWorkDayResponse.Failed> failed  = new ArrayList<>();
 
         for (LocalDate date : uniqueDates) {
+            if (workDayRepository.existsByDoctorIdAndDate(req.getDoctorId(), date)) {
+                failed.add(new BulkCreateWorkDayResponse.Failed(date, "Bác sĩ đã có lịch ngày này"));
+                continue;
+            }
             try {
-                if (workDayRepository.existsByDoctorIdAndDate(req.getDoctorId(), date)) {
-                    failed.add(Map.of("date", date, "reason", "Bác sĩ đã có lịch ngày này"));
-                    continue;
-                }
-
-                DoctorWorkDay wd = new DoctorWorkDay();
-                wd.setDate(date);
-                wd.setCreatedBy(adminId);
-
-                var doctor = new com.vietskin.backend_springboot.modules.doctors.entity.Doctor();
-                doctor.setId(req.getDoctorId());
-                wd.setDoctor(doctor);
-
-                var room = new com.vietskin.backend_springboot.modules.rooms.entity.Room();
-                room.setId(roomId);
-                wd.setRoom(room);
-
-                workDayRepository.save(wd);
-                success.add(Map.of("date", date, "roomId", roomId));
+                workDayRepository.save(buildWorkDay(req.getDoctorId(), roomId, date, adminId));
+                success.add(new BulkCreateWorkDayResponse.Created(date, roomId));
             } catch (Exception e) {
-                failed.add(Map.of("date", date, "reason", "Lỗi không xác định"));
+                failed.add(new BulkCreateWorkDayResponse.Failed(date, "Lỗi không xác định"));
             }
         }
 
-        return Map.of("success", success, "failed", failed);
+        return new BulkCreateWorkDayResponse(success, failed);
     }
 
-    // ── Xóa 1 ngày làm ──────────────────────────────────────
-    public Map<String, Object> remove(Integer id) {
+    public void remove(Integer id) {
         DoctorWorkDay wd = workDayRepository.findById(id)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND,
                         "Lịch làm việc không tồn tại"));
@@ -148,7 +109,7 @@ public class DoctorWorkDayService {
         boolean hasConfirmed = appointmentRepository
                 .existsByDoctorIdAndDateAndStatusNotIn(
                         wd.getDoctor().getId(), wd.getDate(),
-                        List.of("cancelled", "no_show", "pending")
+                        List.of(AppointmentStatus.cancelled, AppointmentStatus.no_show, AppointmentStatus.pending)
                 );
 
         if (hasConfirmed)
@@ -156,6 +117,20 @@ public class DoctorWorkDayService {
                     "Không thể xóa — ngày này đã có lịch hẹn bệnh nhân đã xác nhận");
 
         workDayRepository.deleteById(id);
-        return Map.of("id", id, "deleted", true);
+    }
+
+    private DoctorWorkDay buildWorkDay(Integer doctorId, Integer roomId, LocalDate date, Integer adminId) {
+        DoctorWorkDay wd = new DoctorWorkDay();
+        wd.setDate(date);
+        wd.setCreatedBy(adminId);
+
+        var doctor = new com.vietskin.backend_springboot.modules.doctors.entity.Doctor();
+        doctor.setId(doctorId);
+        wd.setDoctor(doctor);
+
+        var room = new com.vietskin.backend_springboot.modules.rooms.entity.Room();
+        room.setId(roomId);
+        wd.setRoom(room);
+        return wd;
     }
 }

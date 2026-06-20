@@ -3,11 +3,15 @@ package com.vietskin.backend_springboot.modules.invoices.service;
 import com.vietskin.backend_springboot.common.enums.PaymentMethod;
 import com.vietskin.backend_springboot.common.enums.PaymentStatus;
 import com.vietskin.backend_springboot.common.exception.AppException;
+import com.vietskin.backend_springboot.common.utils.SecurityUtils;
 import com.vietskin.backend_springboot.common.websocket.AppWebSocketHandler;
 import com.vietskin.backend_springboot.modules.appointments.entity.Appointment;
 import com.vietskin.backend_springboot.modules.appointments.repository.AppointmentRepository;
 import com.vietskin.backend_springboot.modules.invoices.dto.CreateInvoiceRequest;
+import com.vietskin.backend_springboot.modules.invoices.dto.InvoiceFlat;
+import com.vietskin.backend_springboot.modules.invoices.dto.InvoiceResponse;
 import com.vietskin.backend_springboot.modules.invoices.entity.Invoice;
+import com.vietskin.backend_springboot.modules.invoices.mapper.InvoiceMapper;
 import com.vietskin.backend_springboot.modules.invoices.repository.InvoiceRepository;
 import com.vietskin.backend_springboot.modules.notifications.service.NotificationService;
 import com.vietskin.backend_springboot.modules.users.entity.User;
@@ -15,11 +19,14 @@ import com.vietskin.backend_springboot.modules.users.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.text.NumberFormat;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -36,7 +43,7 @@ public class InvoiceService {
     private final AppWebSocketHandler wsHandler;
 
     @Transactional
-    public Invoice create(CreateInvoiceRequest req, Integer receivedByUserId) {
+    public InvoiceResponse create(CreateInvoiceRequest req, Integer receivedByUserId) {
         Appointment apt = appointmentRepository.findById(req.getAppointmentId())
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Lịch hẹn không tồn tại"));
 
@@ -53,42 +60,22 @@ public class InvoiceService {
 
                 Invoice saved = invoiceRepository.save(existingInvoice);
                 notifyPatientOfSuccess(saved, apt);
-                return saved;
+                // Nạp lại bằng projection để trả response (patient/receivedBy) — tránh serialize entity LAZY
+                return responseById(saved.getId());
             } else {
                 throw new AppException(HttpStatus.BAD_REQUEST, "Lịch hẹn này đã có hóa đơn");
             }
         }
 
-        // Tạo mã hóa đơn
-        long count = invoiceRepository.count();
-        String invoiceCode = String.format("INV-%d-%04d", LocalDateTime.now().getYear(), count + 1);
-
-        // Tính tiền
-        BigDecimal consultationFee = apt.getDoctor() != null && apt.getDoctor().getConsultationFee() != null
-                ? apt.getDoctor().getConsultationFee()
-                : BigDecimal.valueOf(150000);
-        BigDecimal servicePrice = apt.getService() != null && apt.getService().getPrice() != null
-                ? apt.getService().getPrice()
-                : BigDecimal.ZERO;
-        BigDecimal amount = consultationFee.add(servicePrice);
-
-        // Mô tả hóa đơn
-        String doctorName = apt.getDoctor() != null && apt.getDoctor().getUser() != null
-                ? apt.getDoctor().getUser().getName() : "Bác sĩ";
-        StringBuilder desc = new StringBuilder("Phí khám - ").append(doctorName);
-        if (apt.getService() != null) {
-            desc.append(" | Dịch vụ: ").append(apt.getService().getName());
-        }
-
         User receiver = userRepository.findById(receivedByUserId).orElse(null);
 
         Invoice invoice = Invoice.builder()
-                .invoiceCode(invoiceCode)
+                .invoiceCode(nextInvoiceCode())
                 .appointment(apt)
                 .patient(apt.getPatient())
                 .patientName(apt.getPatientName())
-                .description(desc.toString())
-                .amount(amount)
+                .description(buildDescription(apt))
+                .amount(computeAmount(apt))
                 .status(PaymentStatus.paid)
                 .method(PaymentMethod.valueOf(req.getPaymentMethod()))
                 .paidAt(LocalDateTime.now())
@@ -98,7 +85,81 @@ public class InvoiceService {
 
         Invoice saved = invoiceRepository.save(invoice);
         notifyPatientOfSuccess(saved, apt);
-        return saved;
+        // Nạp lại bằng projection để trả response (patient/receivedBy) — tránh serialize entity LAZY
+        return responseById(saved.getId());
+    }
+
+    /** Lấy InvoiceResponse theo id qua projection (dùng sau create). */
+    private InvoiceResponse responseById(Integer id) {
+        return invoiceRepository.findFlatById(id)
+                .map(InvoiceMapper::toResponse)
+                .orElse(null);
+    }
+
+    /**
+     * Tạo hóa đơn "chưa thanh toán" khi lượt khám hoàn tất.
+     * Chạy ở transaction riêng (REQUIRES_NEW) để nếu có lỗi cũng không làm rollback
+     * việc cập nhật trạng thái lịch hẹn ở luồng gọi.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void createUnpaidForAppointment(Appointment apt) {
+        if (invoiceRepository.findByAppointmentId(apt.getId()).isPresent()) {
+            return; // tránh tạo trùng
+        }
+
+        Invoice invoice = Invoice.builder()
+                .invoiceCode(nextInvoiceCode())
+                .appointment(apt)
+                .patient(apt.getPatient())
+                .patientName(apt.getPatientName())
+                .description(buildDescription(apt))
+                .amount(computeAmount(apt))
+                .status(PaymentStatus.unpaid)
+                .build();
+        invoiceRepository.save(invoice);
+
+        if (apt.getPatient() != null) {
+            String amountStr = NumberFormat.getNumberInstance(new Locale("vi", "VN"))
+                    .format(invoice.getAmount().longValue()) + "đ";
+            notificationService.notifyUser(
+                    apt.getPatient().getId(), "appointment",
+                    "Yêu cầu thanh toán phí khám",
+                    "Lượt khám của bạn đã hoàn tất. Vui lòng thanh toán số tiền " + amountStr
+                            + " tại quầy lễ tân.");
+        }
+    }
+
+    // ── Helper dùng chung khi dựng hóa đơn ──────────────────────────────────
+
+    /** Sinh mã hóa đơn dạng INV-{năm}-{số thứ tự trong năm}. */
+    private String nextInvoiceCode() {
+        int year = LocalDate.now().getYear();
+        LocalDateTime start = LocalDate.of(year, 1, 1).atStartOfDay();
+        LocalDateTime end = LocalDate.of(year, 12, 31).atTime(LocalTime.MAX);
+        long seq = invoiceRepository.countByCreatedAtBetween(start, end);
+        // Cột invoice_code có ràng buộc UNIQUE nên DB luôn đảm bảo không trùng;
+        // trường hợp đặt đồng thời hiếm gặp sẽ chỉ làm 1 request lỗi (không sinh mã trùng).
+        return String.format("INV-%d-%04d", year, seq + 1);
+    }
+
+    private BigDecimal computeAmount(Appointment apt) {
+        BigDecimal consultationFee = apt.getDoctor() != null && apt.getDoctor().getConsultationFee() != null
+                ? apt.getDoctor().getConsultationFee()
+                : BigDecimal.valueOf(150000);
+        BigDecimal servicePrice = apt.getService() != null && apt.getService().getPrice() != null
+                ? apt.getService().getPrice()
+                : BigDecimal.ZERO;
+        return consultationFee.add(servicePrice);
+    }
+
+    private String buildDescription(Appointment apt) {
+        String doctorName = apt.getDoctor() != null && apt.getDoctor().getUser() != null
+                ? apt.getDoctor().getUser().getName() : "Bác sĩ";
+        StringBuilder desc = new StringBuilder("Phí khám - ").append(doctorName);
+        if (apt.getService() != null) {
+            desc.append(" | Dịch vụ: ").append(apt.getService().getName());
+        }
+        return desc.toString();
     }
 
     private void notifyPatientOfSuccess(Invoice invoice, Appointment apt) {
@@ -122,29 +183,23 @@ public class InvoiceService {
         }
     }
 
-    public List<Invoice> findAll(String status) {
-        if (status != null) {
-            return invoiceRepository.findByStatus(PaymentStatus.valueOf(status))
-                    .stream()
-                    .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
-                    .toList();
-        }
-        return invoiceRepository.findAll()
-                .stream()
-                .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
-                .toList();
+    public List<InvoiceResponse> findAll(String status) {
+        PaymentStatus st = status != null ? PaymentStatus.valueOf(status) : null;
+        // Lọc + sắp xếp + projection thẳng sang DTO tại DB (1 query, tránh N+1 khi serialize)
+        return InvoiceMapper.toList(invoiceRepository.searchFlat(st));
     }
 
-    public Invoice findOne(Integer id) {
-        return invoiceRepository.findById(id)
+    public InvoiceResponse findOne(Integer id) {
+        InvoiceFlat f = invoiceRepository.findFlatById(id)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Hóa đơn không tồn tại"));
+        // Bệnh nhân chỉ được xem hóa đơn của chính mình (chống IDOR)
+        SecurityUtils.requireSelfIfPatient(f.patientId());
+        return InvoiceMapper.toResponse(f);
     }
 
-    public List<Invoice> findByPatient(Integer patientId) {
-        return invoiceRepository.findByPatientId(patientId)
-                .stream()
-                .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
-                .toList();
+    public List<InvoiceResponse> findByPatient(Integer patientId) {
+        // Query đã ORDER BY createdAt DESC
+        return InvoiceMapper.toList(invoiceRepository.findFlatByPatientId(patientId));
     }
 
     public Map<String, Object> getStats() {

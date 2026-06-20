@@ -26,9 +26,11 @@ export function useSSE(
     const token = localStorage.getItem('accessToken');
     if (!token) return;
 
+    const apiBase =
+      (import.meta as any).env?.VITE_API_URL ?? 'http://localhost:8080/api';
     const separator = url.includes('?') ? '&' : '?';
     const es = new EventSource(
-      `http://localhost:8080/api${url}${separator}token=${token}`,
+      `${apiBase}${url}${separator}token=${token}`,
     );
 
     es.onmessage = (e) => {

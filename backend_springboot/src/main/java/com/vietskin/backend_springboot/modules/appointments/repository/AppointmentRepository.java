@@ -1,6 +1,7 @@
 package com.vietskin.backend_springboot.modules.appointments.repository;
 
 import com.vietskin.backend_springboot.common.enums.AppointmentStatus;
+import com.vietskin.backend_springboot.modules.appointments.dto.AppointmentFlat;
 import com.vietskin.backend_springboot.modules.appointments.entity.Appointment;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -10,10 +11,50 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface AppointmentRepository extends JpaRepository<Appointment, Integer> {
 
+    // PROJECTION phẳng sang AppointmentFlat: chỉ select cột vô hướng + LEFT JOIN các quan hệ.
+    // Không nạp entity User/Doctor nên Hibernate không kích hoạt OneToOne inverse → 1 query, hết N+1.
+    String PROJECTION = "SELECT new com.vietskin.backend_springboot.modules.appointments.dto.AppointmentFlat(" +
+            "a.id, a.patientName, a.patientPhone, a.patientEmail, a.time, a.date, a.status, a.symptoms, " +
+            "a.queueNumber, a.createdAt, a.confirmedAt, " +
+            "p.id, p.name, p.phone, " +
+            "pp.patientCode, pp.dateOfBirth, pp.gender, pp.bloodType, pp.allergies, pp.medicalHistory, pp.province, pp.address, " +
+            "d.id, du.name, du.avatar, d.consultationFee, " +
+            "s.id, s.name, s.price, " +
+            "i.id, i.status, i.amount) " +
+            "FROM Appointment a " +
+            "LEFT JOIN a.patient p " +
+            "LEFT JOIN p.patientProfile pp " +
+            "LEFT JOIN a.doctor d " +
+            "LEFT JOIN d.user du " +
+            "LEFT JOIN a.service s " +
+            "LEFT JOIN a.invoice i ";
+
+    // Lọc lịch hẹn ngay tại DB (tham số null = bỏ qua điều kiện)
+    @Query(PROJECTION + "WHERE (:from IS NULL OR a.date >= :from) AND (:to IS NULL OR a.date <= :to) " +
+            "AND (:doctorId IS NULL OR d.id = :doctorId) AND (:status IS NULL OR a.status = :status) " +
+            "ORDER BY a.date DESC, a.time DESC")
+    List<AppointmentFlat> searchFlat(@Param("from") LocalDate from, @Param("to") LocalDate to,
+            @Param("doctorId") Integer doctorId, @Param("status") AppointmentStatus status);
+
+    @Query(PROJECTION + "WHERE a.id = :id")
+    Optional<AppointmentFlat> findFlatById(@Param("id") Integer id);
+
+    @Query(PROJECTION + "WHERE p.id = :patientId ORDER BY a.date DESC")
+    List<AppointmentFlat> findFlatByPatientId(@Param("patientId") Integer patientId);
+
+    @Query(PROJECTION + "WHERE d.id = :doctorId AND a.date = :date")
+    List<AppointmentFlat> findFlatByDoctorIdAndDate(@Param("doctorId") Integer doctorId,
+            @Param("date") LocalDate date);
+
+    @Query(PROJECTION + "WHERE a.patientPhone = :phone ORDER BY a.date DESC")
+    List<AppointmentFlat> findFlatByPatientPhone(@Param("phone") String phone);
+
+    // Bản entity (nhẹ) — dùng cho logic nội bộ: check trùng giờ, đếm STT, scheduler, chatbot
     List<Appointment> findByDoctorIdAndDate(Integer doctorId, LocalDate date);
 
     List<Appointment> findByPatientId(Integer patientId);
@@ -32,9 +73,9 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Intege
 
     // Kiểm tra có lịch hẹn đã xác nhận trong ngày không (dùng khi xóa work day)
     boolean existsByDoctorIdAndDateAndStatusNotIn(Integer doctorId, LocalDate date,
-            List<String> statuses);
+            List<AppointmentStatus> statuses);
 
-    // Tìm theo phone (walk-in lookup)
+    // Tìm theo phone (walk-in lookup, bản entity nếu cần nội bộ)
     List<Appointment> findByPatientPhone(String patientPhone);
 
     // Tìm theo doctorId + date + status

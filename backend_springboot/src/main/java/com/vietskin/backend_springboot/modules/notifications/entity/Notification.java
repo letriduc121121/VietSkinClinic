@@ -1,5 +1,6 @@
 package com.vietskin.backend_springboot.modules.notifications.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.vietskin.backend_springboot.modules.users.entity.User;
 import jakarta.persistence.*;
 import lombok.*;
@@ -44,7 +45,9 @@ public class Notification {
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
-    // Nếu thông báo gửi đích danh cho 1 user
+    // Nếu thông báo gửi đích danh cho 1 user. FE không đọc object user → ẩn khỏi JSON
+    // (tránh serialize quan hệ LAZY khi đã tắt FORCE_LAZY_LOADING).
+    @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id")
     private User user;
