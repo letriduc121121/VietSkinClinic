@@ -1,8 +1,14 @@
 package com.vietskin.backend_springboot.common.config;
 
+import com.fasterxml.jackson.databind.MapperFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.cfg.CoercionAction;
+import com.fasterxml.jackson.databind.cfg.CoercionInputShape;
 import com.fasterxml.jackson.datatype.hibernate6.Hibernate6Module;
+import org.springframework.boot.autoconfigure.jackson.Jackson2ObjectMapperBuilderCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 
 @Configuration
 public class JacksonConfig {
@@ -20,5 +26,18 @@ public class JacksonConfig {
     @Bean
     public Hibernate6Module hibernate6Module() {
         return new Hibernate6Module();
+    }
+
+    /**
+     * Cấu hình Jackson toàn cục: khi nhận chuỗi rỗng ("") cho trường Enum,
+     * tự động coerce thành null thay vì ném lỗi parse.
+     * Fix lỗi: "Cannot coerce empty String to Gender enum value"
+     */
+    @Bean
+    public Jackson2ObjectMapperBuilderCustomizer jacksonCustomizer() {
+        return builder -> builder.postConfigurer(objectMapper -> {
+            objectMapper.coercionConfigFor(Enum.class)
+                    .setCoercion(CoercionInputShape.EmptyString, CoercionAction.AsNull);
+        });
     }
 }
