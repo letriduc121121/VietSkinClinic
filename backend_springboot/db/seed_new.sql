@@ -129,18 +129,14 @@ INSERT INTO patient_profiles (id, patient_code, date_of_birth, gender, address, 
 (20, 'BN000020', '1996-06-18', 'male', '12 Pasteur', 'TP. Hồ Chí Minh', '0912345688', NOW(), NOW(), 32);
 
 -- ── 7. SERVICES (4 Danh mục, các dịch vụ cốt lõi) ────────────
--- 4 Danh mục: Khám thường, Điều trị chuyên sâu, Tái khám, Tư vấn da liễu
+-- 4 Danh mục: Khám thường, Điều trị chuyên sâu, Tư vấn da liễu, Xét nghiệm da
 INSERT INTO services (id, name, description, price, duration, category, active, created_at, updated_at) VALUES
 (1, 'Khám mụn', 'Chẩn đoán chuyên sâu các loại mụn, xây dựng phác đồ điều trị tận gốc.', 150000.00, 30, 'Khám thường', 1, NOW(), NOW()),
-(2, 'Khám tổng quát', 'Thăm khám da liễu toàn diện, chẩn đoán các bệnh ngoài da thường gặp.', 150000.00, 30, 'Khám thường', 1, NOW(), NOW()),
+(2, 'Khám tổng quát', 'Thăm khám da liễu toàn diện, chẩn đoán các bệnh ngoài da thường gặp.', 150000.00, 30, 'Tư vấn da liễu', 1, NOW(), NOW()),
 (3, 'Khám viêm da', 'Khám và điều trị chàm, vảy nến, viêm da cơ địa, viêm da tiếp xúc.', 200000.00, 30, 'Điều trị chuyên sâu', 1, NOW(), NOW()),
-(4, 'Khám dị ứng', 'Xác định nguyên nhân và điều trị dị ứng da, mề đay, mẩn ngứa.', 200000.00, 30, 'Điều trị chuyên sâu', 1, NOW(), NOW()),
-(5, 'Tái khám mụn', 'Đánh giá tiến trình điều trị mụn và điều chỉnh đơn thuốc phù hợp.', 100000.00, 20, 'Tái khám', 1, NOW(), NOW()),
-(6, 'Tái khám tổng quát', 'Tái khám định kỳ theo hẹn của bác sĩ để đánh giá tiến triển bệnh.', 100000.00, 20, 'Tái khám', 1, NOW(), NOW()),
-(7, 'Tư vấn mụn và chăm sóc da', 'Tư vấn chế độ chăm sóc da mụn, lựa chọn mỹ phẩm phù hợp.', 120000.00, 30, 'Tư vấn da liễu', 1, NOW(), NOW()),
-(8, 'Tư vấn viêm da cơ địa', 'Tư vấn cách phòng ngừa bùng phát viêm da cơ địa và bảo vệ hàng rào da.', 120000.00, 30, 'Tư vấn da liễu', 1, NOW(), NOW());
+(4, 'Khám dị ứng', 'Xác định nguyên nhân và điều trị dị ứng da, mề đay, mẩn ngứa.', 200000.00, 30, 'Xét nghiệm da', 1, NOW(), NOW());
 
--- ── 8. MEDICINES ─────────────────────────────────────────────
+-- ── 8. MEDICINES (56 loại thuốc khác nhau) ────────────────────
 INSERT INTO medicines (id, name, unit, category, description, active, created_at) VALUES
 (1, 'Differin 0.1% gel', 'tuýp', 'Thuốc bôi', 'Điều trị mụn trứng cá', 1, NOW()),
 (2, 'Azithromycin 500mg', 'viên', 'Kháng sinh', 'Kháng sinh nhóm macrolide', 1, NOW()),
@@ -151,7 +147,53 @@ INSERT INTO medicines (id, name, unit, category, description, active, created_at
 (7, 'Ketoconazole 2% cream', 'tuýp', 'Thuốc bôi', 'Kháng nấm bôi ngoài da', 1, NOW()),
 (8, 'Loratadine 10mg', 'viên', 'Kháng histamin', 'Điều trị dị ứng, ngứa', 1, NOW()),
 (9, 'Fucidin 2% cream', 'tuýp', 'Thuốc bôi', 'Kháng sinh bôi ngoài da', 1, NOW()),
-(10, 'Prednisolone 5mg', 'viên', 'Corticoid', 'Kháng viêm trị dị ứng', 1, NOW());
+(10, 'Prednisolone 5mg', 'viên', 'Corticoid', 'Kháng viêm trị dị ứng', 1, NOW()),
+(11, 'Benzoyl Peroxide 5% gel', 'tuýp', 'Thuốc bôi', 'Trị mụn sưng viêm', 1, NOW()),
+(12, 'Adapalene 0.1% gel', 'tuýp', 'Thuốc bôi', 'Trị mụn trứng cá ẩn', 1, NOW()),
+(13, 'Clindamycin 1% gel', 'tuýp', 'Thuốc bôi', 'Kháng sinh bôi trị mụn', 1, NOW()),
+(14, 'Salicylic Acid 2% solution', 'lọ', 'Tẩy tế bào chết', 'Làm sạch lỗ chân lông', 1, NOW()),
+(15, 'Klenzit MS', 'tuýp', 'Thuốc bôi', 'Trị mụn ẩn, mụn đầu đen', 1, NOW()),
+(16, 'Klenzit C', 'tuýp', 'Thuốc bôi', 'Trị mụn viêm, mụn mủ', 1, NOW()),
+(17, 'Derma Forte', 'tuýp', 'Thuốc bôi', 'Trị thâm mụn, ngừa mụn', 1, NOW()),
+(18, 'Megaduo', 'tuýp', 'Thuốc bôi', 'Giảm mụn, mờ thâm', 1, NOW()),
+(19, 'Eucerin ProAcne', 'lọ', 'Chăm sóc da', 'Tinh chất giảm mụn', 1, NOW()),
+(20, 'Laroche Posay Duo+', 'tuýp', 'Chăm sóc da', 'Giảm mụn ngừa thâm', 1, NOW()),
+(21, 'Decumar gel', 'tuýp', 'Chăm sóc da', 'Trị mụn thâm từ nghệ', 1, NOW()),
+(22, 'Acnes Sealing Gel', 'tuýp', 'Thuốc bôi', 'Trị mụn sưng đỏ', 1, NOW()),
+(23, 'Erythromycin 250mg', 'viên', 'Kháng sinh', 'Điều trị nhiễm khuẩn da', 1, NOW()),
+(24, 'Doxycycline 100mg', 'viên', 'Kháng sinh', 'Trị mụn viêm nặng', 1, NOW()),
+(25, 'Tetracycline 1%', 'tuýp', 'Thuốc bôi', 'Mỡ kháng sinh bôi da', 1, NOW()),
+(26, 'Fucicort', 'tuýp', 'Corticoid', 'Trị viêm da nhiễm khuẩn', 1, NOW()),
+(27, 'Gentrisone', 'tuýp', 'Corticoid', 'Trị ngứa, nấm, viêm da', 1, NOW()),
+(28, 'Dibetalic', 'tuýp', 'Corticoid', 'Trị vảy nến, á sừng', 1, NOW()),
+(29, 'Skinoren 20% cream', 'tuýp', 'Thuốc bôi', 'Trị mụn, trị thâm', 1, NOW()),
+(30, 'Obagi Tretinoin 0.025%', 'tuýp', 'Thuốc bôi', 'Trẻ hóa da, trị mụn', 1, NOW()),
+(31, 'Cetirizine 10mg', 'viên', 'Kháng histamin', 'Trị ngứa dị ứng', 1, NOW()),
+(32, 'Fexofenadine 180mg', 'viên', 'Kháng histamin', 'Trị mề đay dị ứng', 1, NOW()),
+(33, 'Desloratadine 5mg', 'viên', 'Kháng histamin', 'Trị viêm mũi dị ứng và ngứa', 1, NOW()),
+(34, 'Medrol 4mg', 'viên', 'Corticoid', 'Kháng viêm mạnh', 1, NOW()),
+(35, 'Dexamethasone 0.5mg', 'viên', 'Corticoid', 'Kháng viêm dị ứng', 1, NOW()),
+(36, 'Bepanthen cream', 'tuýp', 'Phục hồi da', 'Trị hăm, khô da, nứt nẻ', 1, NOW()),
+(37, 'Cicaplast Baume B5', 'tuýp', 'Phục hồi da', 'Làm dịu da kích ứng', 1, NOW()),
+(38, 'Avene Cicalfate', 'tuýp', 'Phục hồi da', 'Kháng khuẩn phục hồi da', 1, NOW()),
+(39, 'Bio-essence B5', 'lọ', 'Chăm sóc da', 'Tinh chất cấp ẩm phục hồi', 1, NOW()),
+(40, 'Obagi Clinical Kinetin', 'lọ', 'Chăm sóc da', 'Kem dưỡng phục hồi da nhạy cảm', 1, NOW()),
+(41, 'Zinc Oxide 10%', 'tuýp', 'Thuốc bôi', 'Dịu da sát khuẩn nhẹ', 1, NOW()),
+(42, 'Contractubex', 'tuýp', 'Trị sẹo', 'Trị sẹo lồi, sẹo phì đại', 1, NOW()),
+(43, 'Dermatix Ultra', 'tuýp', 'Trị sẹo', 'Làm mờ sẹo thâm, sẹo lồi', 1, NOW()),
+(44, 'Hirusar', 'tuýp', 'Trị sẹo', 'Giảm thâm mụn, sẹo lõm', 1, NOW()),
+(45, 'Acyclovir 400mg', 'viên', 'Kháng virus', 'Trị Zona, thủy đậu, Herpes', 1, NOW()),
+(46, 'Acyclovir 5% cream', 'tuýp', 'Thuốc bôi', 'Bôi ngứa mụn nước Herpes', 1, NOW()),
+(47, 'Terbinafine 250mg', 'viên', 'Kháng nấm', 'Trị nấm móng, nấm da toàn thân', 1, NOW()),
+(48, 'Itraconazole 100mg', 'viên', 'Kháng nấm', 'Điều trị nấm Candida, nấm da', 1, NOW()),
+(49, 'Nizoral cream', 'tuýp', 'Thuốc bôi', 'Trị nấm ngứa ngoài da', 1, NOW()),
+(50, 'Canesten', 'tuýp', 'Thuốc bôi', 'Trị nấm kẽ chân, nấm bẹn', 1, NOW()),
+(51, 'Tacrolimus 0.03%', 'tuýp', 'Thuốc bôi', 'Ức chế miễn dịch trị viêm da', 1, NOW()),
+(52, 'Elidel 1% cream', 'tuýp', 'Thuốc bôi', 'Trị viêm da cơ địa không chứa corticoid', 1, NOW()),
+(53, 'Sodermix', 'tuýp', 'Chăm sóc da', 'Giảm ngứa, trị sẹo lồi', 1, NOW()),
+(54, 'Cerave Moisturizing Cream', 'hũ', 'Chăm sóc da', 'Kem dưỡng ẩm phục hồi màng bảo vệ da', 1, NOW()),
+(55, 'Cetaphil Moisturizing Lotion', 'lọ', 'Chăm sóc da', 'Sữa dưỡng ẩm dịu nhẹ toàn thân', 1, NOW()),
+(56, 'Physiogel Calming Relief', 'lọ', 'Chăm sóc da', 'Làm dịu da khô nhạy cảm kích ứng', 1, NOW());
 
 -- ── 9. DOCTOR WORK DAYS (T2→T7 trong 30 ngày tới cho 4 BS) ──
 INSERT INTO doctor_work_days (doctor_id, room_id, date, created_at)
