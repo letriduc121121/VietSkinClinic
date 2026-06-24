@@ -18,6 +18,7 @@ import com.vietskin.backend_springboot.modules.users.entity.User;
 import com.vietskin.backend_springboot.modules.users.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,6 +44,7 @@ public class InvoiceService {
     private final AppWebSocketHandler wsHandler;
 
     @Transactional
+    @CacheEvict(value = "appointments_list", allEntries = true)
     public InvoiceResponse create(CreateInvoiceRequest req, Integer receivedByUserId) {
         Appointment apt = appointmentRepository.findById(req.getAppointmentId())
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Lịch hẹn không tồn tại"));
