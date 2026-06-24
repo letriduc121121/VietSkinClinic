@@ -13,6 +13,7 @@
 -- ============================================================
 
 USE vietskin;
+SET NAMES utf8mb4;
 
 -- Xóa dữ liệu cũ trong các bảng liên quan trước khi nạp mới (tránh xung đột FK)
 SET FOREIGN_KEY_CHECKS = 0;
@@ -181,7 +182,7 @@ INSERT INTO medicines (id, name, unit, category, description, active, created_at
 (41, 'Zinc Oxide 10%', 'tuýp', 'Thuốc bôi', 'Dịu da sát khuẩn nhẹ', 1, NOW()),
 (42, 'Contractubex', 'tuýp', 'Trị sẹo', 'Trị sẹo lồi, sẹo phì đại', 1, NOW()),
 (43, 'Dermatix Ultra', 'tuýp', 'Trị sẹo', 'Làm mờ sẹo thâm, sẹo lồi', 1, NOW()),
-(44, 'Hirusar', 'tuýp', 'Trị sẹo', 'Giảm thâm mụn, sẹo lõm', 1, NOW()),
+(44, 'Hiruscar', 'tuýp', 'Trị sẹo', 'Giảm thâm mụn, sẹo lõm', 1, NOW()),
 (45, 'Acyclovir 400mg', 'viên', 'Kháng virus', 'Trị Zona, thủy đậu, Herpes', 1, NOW()),
 (46, 'Acyclovir 5% cream', 'tuýp', 'Thuốc bôi', 'Bôi ngứa mụn nước Herpes', 1, NOW()),
 (47, 'Terbinafine 250mg', 'viên', 'Kháng nấm', 'Trị nấm móng, nấm da toàn thân', 1, NOW()),
