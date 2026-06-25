@@ -63,7 +63,7 @@ export default function PatientDashboard() {
   const stats = [
     { label: 'Lịch hẹn sắp tới', value: loading ? '–' : String(upcoming.length), color: 'text-[#1a3a5c]' },
     { label: 'Tổng lần đã khám',  value: loading ? '–' : String(doneCount),       color: 'text-green-600' },
-    { label: 'Hồ sơ bệnh án',     value: loading ? '–' : String(records.length),  color: 'text-amber-600' },
+    { label: 'Lịch sử khám',     value: loading ? '–' : String(records.length),  color: 'text-amber-600' },
   ];
 
   return (
@@ -177,7 +177,7 @@ export default function PatientDashboard() {
             {loading ? (
               <div className="h-24 flex items-center justify-center text-gray-400 text-sm">Đang tải...</div>
             ) : recentRecords.length === 0 ? (
-              <div className="py-10 text-center text-gray-400 text-sm">Chưa có hồ sơ bệnh án nào</div>
+              <div className="py-10 text-center text-gray-400 text-sm">Chưa có lịch sử khám nào</div>
             ) : (
               <div className="divide-y divide-gray-50">
                 {recentRecords.map((r) => (

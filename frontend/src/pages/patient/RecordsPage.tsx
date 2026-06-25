@@ -23,7 +23,7 @@ export default function RecordsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Hồ sơ bệnh án</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Lịch sử khám</h1>
         <p className="text-sm text-gray-500 mt-1">Lịch sử khám và kết quả điều trị của bạn tại phòng khám VietSkin.</p>
       </div>
 
@@ -158,7 +158,7 @@ export default function RecordsPage() {
                 <div className="w-12 h-12 bg-gray-50 text-gray-400 rounded-full flex items-center justify-center mx-auto mb-3">
                   👉
                 </div>
-                <p className="text-sm font-medium text-gray-500">Chọn một hồ sơ bệnh án bên trái để xem chi tiết kết quả</p>
+                <p className="text-sm font-medium text-gray-500">Chọn một lịch sử khám bên trái để xem chi tiết kết quả</p>
               </div>
             ) : (
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">

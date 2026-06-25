@@ -29,7 +29,7 @@ const menuByRole: Record<string, MenuItem[]> = {
     { path: '/patient/dashboard',    label: 'Tổng quan',          icon: Icon.dashboard },
     { path: '/patient/booking',      label: 'Đặt lịch khám',      icon: Icon.booking   },
     { path: '/patient/appointments', label: 'Lịch hẹn của tôi',   icon: Icon.calendar  },
-    { path: '/patient/records',      label: 'Hồ sơ bệnh án',      icon: Icon.clipboard },
+    { path: '/patient/records',      label: 'Lịch sử khám',      icon: Icon.clipboard },
     { path: '/patient/invoices',     label: 'Lịch sử thanh toán', icon: Icon.receipt   },
     { path: '/patient/profile',      label: 'Thông tin cá nhân',  icon: Icon.user      },
   ],

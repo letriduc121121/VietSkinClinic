@@ -91,7 +91,7 @@ export default function PatientStatsPage() {
 
       <div className="bg-white rounded-xl border border-gray-200 p-5">
         <h2 className="font-semibold text-gray-700 mb-4">Top 10 chẩn đoán phổ biến</h2>
-        {data.topDiagnoses.length === 0 ? <p className="text-sm text-gray-400">Chưa có hồ sơ bệnh án nào có chẩn đoán.</p> : (
+        {data.topDiagnoses.length === 0 ? <p className="text-sm text-gray-400">Chưa có lịch sử khám nào có chẩn đoán.</p> : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>

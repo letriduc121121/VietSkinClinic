@@ -118,7 +118,7 @@ export default function HistoryPage() {
           <div className="w-80 flex-shrink-0">
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden sticky top-6">
               <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-                <h2 className="font-bold text-sm">Chi tiết hồ sơ bệnh án</h2>
+                <h2 className="font-bold text-sm">Chi tiết lịch sử khám</h2>
                 <button onClick={closeDetail} className="p-1.5 rounded-full hover:bg-gray-100 text-gray-400">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -149,7 +149,7 @@ export default function HistoryPage() {
                     <>
                       {/* Medical record */}
                       <div className="space-y-2">
-                        <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Hồ sơ bệnh án</div>
+                        <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Lịch sử khám</div>
                         <div className="bg-gray-50 rounded-xl p-3 space-y-1.5 text-sm">
                           {selectedRecord.symptoms       && <Row label="Triệu chứng"    value={selectedRecord.symptoms} />}
                           {selectedRecord.skinType       && <Row label="Loại da"        value={selectedRecord.skinType} />}
@@ -186,7 +186,7 @@ export default function HistoryPage() {
                   ) : (
                     <div className="py-6 text-center text-gray-400 text-sm">
                       <div className="text-2xl mb-1">📄</div>
-                      Chưa có hồ sơ bệnh án
+                      Chưa có lịch sử khám
                     </div>
                   )}
 
