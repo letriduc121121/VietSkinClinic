@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Outlet, NavLink, useNavigate, Link } from 'react-router-dom';
+import { Bell, Clock, Pill, Calendar, Hospital } from 'lucide-react';
 import { useAuth } from '@/app/providers/AuthProvider';
 import ExamToast from '@/features/notifications/components/ExamToast';
 import { notificationApi, type Notification } from '@/features/notifications/api/notification.api';
@@ -77,11 +78,11 @@ const fmtTimeAgo = (iso: string) => {
   return `${Math.floor(h / 24)} ngày trước`;
 };
 
-const typeIcon: Record<string, string> = {
-  appointment: '📅',
-  reminder:    '⏰',
-  prescription:'💊',
-  system:      '🔔',
+const typeIcon: Record<string, React.ReactNode> = {
+  appointment: <Calendar className="w-5 h-5" />,
+  reminder:    <Clock className="w-5 h-5" />,
+  prescription:<Pill className="w-5 h-5" />,
+  system:      <Bell className="w-5 h-5" />,
 };
 
 // ── Chuông thông báo cho Lễ tân (local state, không cần DB) ─────────────────
@@ -192,7 +193,7 @@ function ReceptionistNotificationBell() {
           <div className="max-h-80 overflow-y-auto divide-y divide-gray-50">
             {notifs.length === 0 ? (
               <div className="py-10 text-center text-sm text-gray-400">
-                <div className="text-3xl mb-2">🔔</div>
+                <div className="flex justify-center mb-2"><Bell className="w-8 h-8 text-gray-300" /></div>
                 Chưa có thông báo
               </div>
             ) : (
@@ -201,8 +202,8 @@ function ReceptionistNotificationBell() {
                   key={n.id}
                   className={`flex gap-3 px-4 py-3 ${n.read ? 'bg-white' : 'bg-orange-50/60'}`}
                 >
-                  <div className="w-9 h-9 rounded-full bg-orange-100 flex items-center justify-center text-base flex-shrink-0">
-                    ⏰
+                  <div className="w-9 h-9 rounded-full bg-orange-100 flex items-center justify-center text-orange-500 flex-shrink-0">
+                    <Clock className="w-5 h-5" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className={`text-sm leading-snug ${n.read ? 'text-gray-700' : 'text-gray-900 font-semibold'}`}>
@@ -309,7 +310,7 @@ function DoctorNotificationBell() {
           <div className="max-h-80 overflow-y-auto divide-y divide-gray-50">
             {notifs.length === 0 ? (
               <div className="py-10 text-center text-sm text-gray-400">
-                <div className="text-3xl mb-2">🏥</div>
+                <div className="flex justify-center mb-2"><Hospital className="w-8 h-8 text-gray-300" /></div>
                 Chưa có bệnh nhân mới
               </div>
             ) : (
@@ -317,8 +318,8 @@ function DoctorNotificationBell() {
                 <div key={n.id}
                   onClick={() => { navigate('/doctor/today'); setOpen(false); }}
                   className={`flex gap-3 px-4 py-3 cursor-pointer hover:bg-blue-50 transition-colors ${n.read ? 'bg-white' : 'bg-blue-50/60'}`}>
-                  <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center text-base flex-shrink-0">
-                    🏥
+                  <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center text-blue-500 flex-shrink-0">
+                    <Hospital className="w-5 h-5" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className={`text-sm leading-snug ${n.read ? 'text-gray-700' : 'text-gray-900 font-semibold'}`}>
@@ -441,7 +442,7 @@ function NotificationBell() {
               </div>
             ) : notifs.length === 0 ? (
               <div className="py-10 text-center text-sm text-gray-400">
-                <div className="text-3xl mb-2">🔔</div>
+                <div className="flex justify-center mb-2"><Bell className="w-8 h-8 text-gray-300" /></div>
                 Chưa có thông báo nào
               </div>
             ) : (
@@ -452,8 +453,8 @@ function NotificationBell() {
                   className={`flex gap-3 px-4 py-3 transition-colors cursor-pointer
                     ${n.isRead ? 'bg-white hover:bg-gray-50' : 'bg-blue-50/60 hover:bg-blue-50'}`}
                 >
-                  <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-base flex-shrink-0">
-                    {typeIcon[n.type] ?? '🔔'}
+                  <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary flex-shrink-0">
+                    {typeIcon[n.type] ?? <Bell className="w-5 h-5" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className={`text-sm leading-snug ${n.isRead ? 'text-gray-700' : 'text-gray-900 font-semibold'}`}>

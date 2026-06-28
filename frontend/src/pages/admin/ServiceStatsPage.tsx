@@ -1,5 +1,6 @@
 import { fmtVnd, fmtShort } from '@/shared/lib/format';
 import { useServiceStats } from '@/features/stats/hooks/useStats';
+import { Activity, CheckCircle2, Banknote } from 'lucide-react';
 import { StatCard } from '@/features/stats/components/StatCard';
 
 export default function ServiceStatsPage() {
@@ -18,9 +19,9 @@ export default function ServiceStatsPage() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <StatCard icon="💉" label="Dịch vụ đang hoạt động" value={data.totalServices.toLocaleString('vi-VN')} color="indigo" />
-        <StatCard icon="✅" label="Tổng lượt sử dụng" value={data.totalServiceVisits.toLocaleString('vi-VN')} color="blue" />
-        <StatCard icon="💰" label="Doanh thu từ dịch vụ" value={fmtVnd(data.totalServiceRevenue)} color="green" />
+        <StatCard icon={<Activity className="w-6 h-6" />} label="Dịch vụ đang hoạt động" value={data.totalServices.toLocaleString('vi-VN')} color="indigo" />
+        <StatCard icon={<CheckCircle2 className="w-6 h-6" />} label="Tổng lượt sử dụng" value={data.totalServiceVisits.toLocaleString('vi-VN')} color="blue" />
+        <StatCard icon={<Banknote className="w-6 h-6" />} label="Doanh thu từ dịch vụ" value={fmtVnd(data.totalServiceRevenue)} color="green" />
       </div>
 
       {data.services.length === 0 ? (

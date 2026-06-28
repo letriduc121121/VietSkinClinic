@@ -3,6 +3,7 @@ import type { Prescription } from '@/features/medical-records/types/medical-reco
 import type { MedicalRecordImage } from '@/features/medical-record-images/types/medical-record-image.types';
 import { usePatientRecords } from '@/features/medical-records/hooks/usePatientRecords';
 import { formatInstruction, fmtExamDate as fmtDate } from '@/features/medical-records/lib/exam';
+import { ArrowRight, Stethoscope, Pill } from 'lucide-react';
 
 export default function RecordsPage() {
   const { records, loading, selected, detailLoading, loadDetail } = usePatientRecords();
@@ -33,13 +34,13 @@ export default function RecordsPage() {
         </div>
       ) : records.length === 0 ? (
         <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-16 text-center shadow-sm">
-          <h3 className="font-bold text-lg text-gray-800">Chưa có bệnh án nào</h3>
-          <p className="text-sm text-gray-500 mt-1">Hồ sơ khám bệnh của bạn sẽ xuất hiện tại đây sau lần khám đầu tiên.</p>
+          <h3 className="font-bold text-lg text-gray-800">Chưa có lịch sử khám nào</h3>
+          <p className="text-sm text-gray-500 mt-1">Lịch sử khám bệnh của bạn sẽ xuất hiện tại đây sau lần khám đầu tiên.</p>
         </div>
       ) : (
         <div className="grid lg:grid-cols-5 gap-6">
 
-          {/* ── Danh sách bệnh án (Bên trái) ── */}
+          {/* ── Danh sách lịch sử khám (Bên trái) ── */}
           <div className="lg:col-span-2 space-y-3.5">
             {/* Bộ lọc ngày khám */}
             <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm space-y-3">
@@ -81,7 +82,7 @@ export default function RecordsPage() {
 
             {filteredRecords.length === 0 ? (
               <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-8 text-center text-xs text-gray-500 shadow-sm">
-                Không tìm thấy bệnh án trong khoảng ngày đã chọn.
+                Không tìm thấy lịch sử khám trong khoảng ngày đã chọn.
               </div>
             ) : (
               filteredRecords.map(r => {
@@ -147,7 +148,7 @@ export default function RecordsPage() {
             }))}
           </div>
 
-          {/* ── Chi tiết bệnh án (Bên phải) ── */}
+          {/* ── Chi tiết lịch sử khám (Bên phải) ── */}
           <div className="lg:col-span-3">
             {detailLoading ? (
               <div className="flex justify-center py-24 bg-white rounded-2xl border border-gray-100 shadow-sm">
@@ -156,7 +157,7 @@ export default function RecordsPage() {
             ) : !selected ? (
               <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-20 text-center shadow-sm">
                 <div className="w-12 h-12 bg-gray-50 text-gray-400 rounded-full flex items-center justify-center mx-auto mb-3">
-                  👉
+                  <ArrowRight className="w-6 h-6" />
                 </div>
                 <p className="text-sm font-medium text-gray-500">Chọn một lịch sử khám bên trái để xem chi tiết kết quả</p>
               </div>
@@ -186,7 +187,7 @@ export default function RecordsPage() {
                         <div className="font-bold text-gray-800 mt-0.5">{selected.doctor?.user.name ?? 'Bác sĩ VietSkin'}</div>
                       </div>
                       <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center font-bold text-gray-600 border border-gray-200 flex-shrink-0">
-                        🩺
+                        <Stethoscope className="w-5 h-5" />
                       </div>
                       <div className="block sm:hidden">
                         <div className="text-xs text-gray-500 font-semibold uppercase tracking-wider">Bác sĩ phụ trách</div>
@@ -317,7 +318,7 @@ export default function RecordsPage() {
                       prescriptions.map((p, pi) => (
                         <div key={p.id} className="rounded-2xl border border-amber-100/80 bg-amber-50/10 overflow-hidden shadow-sm">
                           <div className="flex items-center justify-between px-4 py-3 bg-amber-50/50 border-b border-amber-100/80">
-                            <span className="text-xs font-bold text-amber-800">💊 Toa thuốc #{pi + 1}</span>
+                            <span className="text-xs font-bold text-amber-800 flex items-center gap-1.5"><Pill className="w-4 h-4" /> Toa thuốc #{pi + 1}</span>
                             {p.note && <span className="text-xs text-amber-700 italic max-w-[200px] sm:max-w-xs truncate" title={p.note}>Lưu ý: {p.note}</span>}
                           </div>
                           <div className="divide-y divide-amber-100/50 bg-white">

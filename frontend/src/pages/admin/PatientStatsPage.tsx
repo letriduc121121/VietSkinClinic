@@ -1,4 +1,5 @@
 import { usePatientStats } from '@/features/stats/hooks/useStats';
+import { User, UserPlus, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { StatCard } from '@/features/stats/components/StatCard';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -29,10 +30,10 @@ export default function PatientStatsPage() {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard icon="👤" label="Tổng bệnh nhân" value={data.totalPatients.toLocaleString()} color="blue" />
-        <StatCard icon="🆕" label="Mới tháng này" value={`+${data.newThisMonth}`} color="green" />
-        <StatCard icon="✅" label="Tổng lượt khám" value={data.totalVisits.toLocaleString()} color="purple" />
-        <StatCard icon="⚠️" label="Tỷ lệ không đến" value={`${data.noShowRate}%`} color="red" />
+        <StatCard icon={<User className="w-6 h-6" />} label="Tổng bệnh nhân" value={data.totalPatients.toLocaleString()} color="blue" />
+        <StatCard icon={<UserPlus className="w-6 h-6" />} label="Mới tháng này" value={`+${data.newThisMonth}`} color="green" />
+        <StatCard icon={<CheckCircle2 className="w-6 h-6" />} label="Tổng lượt khám" value={data.totalVisits.toLocaleString()} color="purple" />
+        <StatCard icon={<AlertTriangle className="w-6 h-6" />} label="Tỷ lệ không đến" value={`${data.noShowRate}%`} color="red" />
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 p-5">

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Calendar } from 'lucide-react';
 import { useDisclosure } from '@/shared/hooks/useDisclosure';
 import { ConfirmDialog } from '@/shared/components/ConfirmDialog';
 import type { Appointment } from '@/features/appointments/types/appointment.types';
@@ -105,7 +106,7 @@ export default function AppointmentsPage() {
         </div>
       ) : filtered.length === 0 ? (
         <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-16 text-center">
-          <div className="text-4xl mb-3">📅</div>
+          <div className="flex justify-center mb-3"><Calendar className="w-12 h-12 text-gray-300" /></div>
           <h3 className="font-bold text-lg">Không có lịch hẹn nào</h3>
           <p className="text-sm text-gray-500 mt-1">
             {hasDateFilter

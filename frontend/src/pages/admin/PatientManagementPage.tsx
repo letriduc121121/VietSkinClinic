@@ -98,7 +98,7 @@ export default function PatientManagementPage() {
       {del.isOpen && del.data && (
         <ConfirmDialog
           title="Xoá tài khoản bệnh nhân"
-          message={<>Bạn có chắc muốn xoá tài khoản <strong>{del.data.name}</strong>? Tài khoản sẽ bị vô hiệu hoá, lịch sử khám và bệnh án vẫn được giữ nguyên.</>}
+          message={<>Bạn có chắc muốn xoá tài khoản <strong>{del.data.name}</strong>? Tài khoản sẽ bị vô hiệu hoá, lịch sử khám vẫn được giữ nguyên.</>}
           error={deleteError}
           loading={deleting}
           onClose={del.close}

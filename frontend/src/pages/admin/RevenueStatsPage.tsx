@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { fmtVnd, fmtShort } from '@/shared/lib/format';
+import { Calendar, CalendarDays, Banknote, FileText, Loader2 } from 'lucide-react';
 import { useInvoiceStats, useInvoices } from '@/features/invoices/hooks/useInvoices';
 import { METHOD_CFG } from '@/features/invoices/lib/method';
 import { exportApi } from '@/features/export/api/export.api';
@@ -18,9 +19,9 @@ export default function RevenueStatsPage() {
 
   const maxRevenue = Math.max(...(stats?.monthly.map(m => m.revenue) ?? [1]), 1);
   const summaryCards = [
-    { label: 'Hôm nay', value: stats?.todayTotal ?? 0, color: 'text-blue-600', bg: 'bg-blue-50', icon: '📅' },
-    { label: 'Tháng này', value: stats?.monthTotal ?? 0, color: 'text-green-600', bg: 'bg-green-50', icon: '📆' },
-    { label: 'Tổng doanh thu', value: stats?.grandTotal ?? 0, color: 'text-[#1a3a5c]', bg: 'bg-slate-50', icon: '💰' },
+    { label: 'Hôm nay', value: stats?.todayTotal ?? 0, color: 'text-blue-600', bg: 'bg-blue-50', icon: <Calendar className="w-6 h-6" /> },
+    { label: 'Tháng này', value: stats?.monthTotal ?? 0, color: 'text-green-600', bg: 'bg-green-50', icon: <CalendarDays className="w-6 h-6" /> },
+    { label: 'Tổng doanh thu', value: stats?.grandTotal ?? 0, color: 'text-[#1a3a5c]', bg: 'bg-slate-50', icon: <Banknote className="w-6 h-6" /> },
   ];
 
   const handleExportPdf = async () => {
@@ -47,7 +48,7 @@ export default function RevenueStatsPage() {
             {years.map(y => <option key={y} value={y}>{y}</option>)}
           </select>
           <button onClick={handleExportPdf} disabled={exporting} className="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors">
-            {exporting ? '⏳' : '📄'} PDF
+            {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />} PDF
           </button>
         </div>
       </div>

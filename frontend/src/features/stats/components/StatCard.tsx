@@ -1,3 +1,5 @@
+import React from 'react';
+
 type StatColor = 'blue' | 'green' | 'purple' | 'red' | 'indigo';
 
 const BG: Record<StatColor, string> = {
@@ -17,7 +19,7 @@ const TEXT: Record<StatColor, string> = {
 };
 
 export function StatCard({ icon, label, value, color }: {
-  icon: string; label: string; value: string; color: StatColor;
+  icon: React.ReactNode; label: string; value: string; color: StatColor;
 }) {
   return (
     <div className={`rounded-xl border p-4 ${BG[color]}`}>

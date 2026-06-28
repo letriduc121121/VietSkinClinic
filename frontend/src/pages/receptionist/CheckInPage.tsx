@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import { Calendar, Users } from 'lucide-react';
 import { useCheckIn } from '@/features/appointments/hooks/useCheckIn';
 import { statusBadge } from '@/features/appointments/lib/status';
 
@@ -77,7 +78,7 @@ export default function CheckInPage() {
 
                 {lookupResult.appointments.length === 0 ? (
                   <div className="p-8 text-center text-gray-400 border border-dashed border-gray-200 rounded-xl">
-                    <div className="text-2xl mb-2">📅</div>
+                    <div className="flex justify-center mb-2"><Calendar className="w-8 h-8 text-gray-300" /></div>
                     <p className="text-sm">Không có lịch hẹn hôm nay cho số này</p>
                   </div>
                 ) : (
@@ -233,7 +234,7 @@ export default function CheckInPage() {
               </div>
             ) : queue.length === 0 ? (
               <div className="p-10 text-center text-gray-400">
-                <div className="text-3xl mb-2">🪑</div>
+                <div className="flex justify-center mb-2"><Users className="w-8 h-8 text-gray-300" /></div>
                 <p className="text-sm">Chưa có bệnh nhân trong hàng chờ</p>
               </div>
             ) : (

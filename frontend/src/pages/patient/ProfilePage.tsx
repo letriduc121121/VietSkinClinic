@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { useAuth } from '@/app/providers/AuthProvider';
 import { useProfile } from '@/features/users/hooks/useProfile';
+import { User, Activity, Lock, AlertTriangle } from 'lucide-react';
 
 const BLOOD_TYPES = ['A+','A-','B+','B-','AB+','AB-','O+','O-'];
 const GENDERS = [{ value: 'male', label: 'Nam' }, { value: 'female', label: 'Nữ' }, { value: 'other', label: 'Khác' }];
@@ -74,14 +75,19 @@ export default function ProfilePage() {
 
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
-        {([['info','👤 Thông tin cơ bản'], ['medical','🏥 Y tế'], ['password','🔒 Mật khẩu']] as const).map(([k, label]) => (
+        {[
+          { key: 'info', label: 'Thông tin cơ bản', icon: <User className="w-4 h-4" /> },
+          { key: 'medical', label: 'Y tế', icon: <Activity className="w-4 h-4" /> },
+          { key: 'password', label: 'Mật khẩu', icon: <Lock className="w-4 h-4" /> }
+        ].map(({ key, label, icon }) => (
           <button
-            key={k}
-            onClick={() => { setTab(k); clearMessages(); }}
-            className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all ${
-              tab === k ? 'bg-white shadow-sm text-main-text' : 'text-gray-500 hover:text-main-text'
+            key={key}
+            onClick={() => { setTab(key as any); clearMessages(); }}
+            className={`flex flex-1 items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+              tab === key ? 'bg-white shadow-sm text-main-text' : 'text-gray-500 hover:text-main-text'
             }`}
           >
+            {icon}
             {label}
           </button>
         ))}
@@ -154,8 +160,9 @@ export default function ProfilePage() {
       {/* ── Tab: Password ─────────────────────────────────────────────────── */}
       {tab === 'password' && (
         <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm space-y-5">
-          <div className="p-4 bg-amber-50 rounded-xl border border-amber-200 text-sm text-amber-700">
-            ⚠️ Mật khẩu nên có ít nhất 8 ký tự, bao gồm chữ hoa, số và ký tự đặc biệt.
+          <div className="p-4 bg-amber-50 rounded-xl border border-amber-200 text-sm text-amber-700 flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+            <span>Mật khẩu nên có ít nhất 8 ký tự, bao gồm chữ hoa, số và ký tự đặc biệt.</span>
           </div>
           <PwField label="Mật khẩu hiện tại" value={pwForm.currentPassword} onChange={e => setPwForm(f => ({...f, currentPassword: e.target.value}))} />
           <PwField label="Mật khẩu mới" value={pwForm.newPassword} onChange={e => setPwForm(f => ({...f, newPassword: e.target.value}))} />

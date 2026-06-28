@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import { Calendar, Phone, MapPin, Droplet, AlertTriangle, ClipboardList, Clock, Pill, Image as ImageIcon, Edit2, Save } from 'lucide-react';
 import { useDisclosure } from '@/shared/hooks/useDisclosure';
 import { ConfirmDialog } from '@/shared/components/ConfirmDialog';
 import { useExamine, type HistoryRecord } from '@/features/medical-records/hooks/useExamine';
@@ -97,18 +98,18 @@ export default function ExaminePage() {
                 </div>
               </div>
               <div className="space-y-2.5">
-                {profile?.dateOfBirth && <InfoRow icon="📅" label="Ngày sinh" value={fmtExamDate(profile.dateOfBirth)} />}
-                <InfoRow icon="📞" label="SĐT" value={displayPhone} />
-                {(profile?.province || profile?.address) && <InfoRow icon="📍" label="Địa chỉ" value={profile.province ?? profile.address ?? ''} />}
-                {profile?.bloodType && <InfoRow icon="🩸" label="Nhóm máu" value={profile.bloodType} />}
-                {profile?.allergies && <InfoRow icon="⚠️" label="Dị ứng" value={profile.allergies} highlight />}
-                {profile?.medicalHistory && <InfoRow icon="📋" label="Tiền sử" value={profile.medicalHistory} />}
+                {profile?.dateOfBirth && <InfoRow icon={<Calendar className="w-4 h-4" />} label="Ngày sinh" value={fmtExamDate(profile.dateOfBirth)} />}
+                <InfoRow icon={<Phone className="w-4 h-4" />} label="SĐT" value={displayPhone} />
+                {(profile?.province || profile?.address) && <InfoRow icon={<MapPin className="w-4 h-4" />} label="Địa chỉ" value={profile.province ?? profile.address ?? ''} />}
+                {profile?.bloodType && <InfoRow icon={<Droplet className="w-4 h-4" />} label="Nhóm máu" value={profile.bloodType} />}
+                {profile?.allergies && <InfoRow icon={<AlertTriangle className="w-4 h-4" />} label="Dị ứng" value={profile.allergies} highlight />}
+                {profile?.medicalHistory && <InfoRow icon={<ClipboardList className="w-4 h-4" />} label="Tiền sử" value={profile.medicalHistory} />}
               </div>
             </div>
 
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
               <div className="px-5 py-3.5 border-b border-gray-100 flex items-center gap-2">
-                <span className="text-sm">🕐</span>
+                <span className="text-sm"><Clock className="w-4 h-4 text-gray-400" /></span>
                 <span className="text-sm font-bold text-gray-700">Lịch sử khám bệnh</span>
                 {history.length > 0 && <span className="ml-auto text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-medium">{history.length} lần</span>}
               </div>
@@ -269,8 +270,8 @@ export default function ExaminePage() {
 
                             <input type="text" className={`${inp} text-xs py-2`} value={presNote} onChange={e => setPresNote(e.target.value)} placeholder="Ghi chú đơn thuốc (nếu có)..." />
 
-                            <button onClick={savePrescription} disabled={savingPres || presItems.length === 0} className="w-full py-2 bg-amber-500 text-white rounded-lg text-xs font-bold hover:bg-amber-600 transition-colors disabled:opacity-40">
-                              {savingPres ? 'Đang lưu...' : `💊  Lưu đơn thuốc${prescriptions.length > 0 ? ` #${prescriptions.length + 1}` : ''}`}
+                            <button onClick={savePrescription} disabled={savingPres || presItems.length === 0} className="w-full py-2 bg-amber-500 text-white rounded-lg text-xs font-bold hover:bg-amber-600 transition-colors disabled:opacity-40 flex items-center justify-center gap-1.5">
+                              {savingPres ? 'Đang lưu...' : <><Pill className="w-4 h-4" /> Lưu đơn thuốc{prescriptions.length > 0 ? ` #${prescriptions.length + 1}` : ''}</>}
                             </button>
                           </div>
                         </div>
@@ -283,7 +284,7 @@ export default function ExaminePage() {
 
                 <div className="border border-gray-200 rounded-xl overflow-hidden">
                   <div className="px-4 py-3 flex items-center gap-2 bg-gray-50 border-b border-gray-100">
-                    <span className="text-sm">🖼️</span>
+                    <span className="text-sm"><ImageIcon className="w-4 h-4 text-gray-400" /></span>
                     <span className="text-sm font-bold text-gray-700 flex-1">Ảnh tổn thương da</span>
                     {images.length > 0 && <span className="text-[10px] bg-[#1a3a5c] text-white px-2 py-0.5 rounded-full font-bold">{images.length} ảnh</span>}
                   </div>
@@ -329,8 +330,8 @@ export default function ExaminePage() {
 
                 {!isDone ? (
                   <div className="flex gap-3 pt-1">
-                    <button onClick={() => saveRecord()} disabled={saving} className="flex-1 border-2 border-[#1a3a5c] text-[#1a3a5c] py-2.5 rounded-xl font-bold text-sm hover:bg-blue-50 transition-colors disabled:opacity-50">
-                      {saving ? 'Đang lưu...' : record?.id ? '📝  Cập nhật hồ sơ' : '📝  Lưu hồ sơ'}
+                    <button onClick={() => saveRecord()} disabled={saving} className="flex flex-1 items-center justify-center gap-1.5 border-2 border-[#1a3a5c] text-[#1a3a5c] py-2.5 rounded-xl font-bold text-sm hover:bg-blue-50 transition-colors disabled:opacity-50">
+                      {saving ? 'Đang lưu...' : record?.id ? <><Edit2 className="w-4 h-4" /> Cập nhật hồ sơ</> : <><Save className="w-4 h-4" /> Lưu hồ sơ</>}
                     </button>
                     <button onClick={handleFinish} disabled={finishing || saving} className="flex-1 bg-green-600 text-white py-2.5 rounded-xl font-bold text-sm hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
                       {finishing && <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>}
@@ -339,8 +340,8 @@ export default function ExaminePage() {
                   </div>
                 ) : editing ? (
                   <div className="flex gap-3 pt-1">
-                    <button onClick={async () => { if (await saveRecord() != null) setEditing(false); }} disabled={saving} className="flex-1 bg-[#1a3a5c] text-white py-2.5 rounded-xl font-bold text-sm hover:bg-[#0f2540] transition-colors disabled:opacity-50">
-                      {saving ? 'Đang lưu...' : '💾  Lưu thay đổi'}
+                    <button onClick={async () => { if (await saveRecord() != null) setEditing(false); }} disabled={saving} className="flex flex-1 items-center justify-center gap-1.5 bg-[#1a3a5c] text-white py-2.5 rounded-xl font-bold text-sm hover:bg-[#0f2540] transition-colors disabled:opacity-50">
+                      {saving ? 'Đang lưu...' : <><Save className="w-4 h-4" /> Lưu thay đổi</>}
                     </button>
                     <button onClick={() => setEditing(false)} disabled={saving} className="flex-1 border-2 border-gray-200 text-gray-600 py-2.5 rounded-xl font-bold text-sm hover:bg-gray-50 transition-colors disabled:opacity-50">
                       Hủy
@@ -349,7 +350,7 @@ export default function ExaminePage() {
                 ) : (
                   <div className="flex gap-3 pt-1">
                     <button onClick={() => setEditing(true)} className="flex-1 border-2 border-[#1a3a5c] text-[#1a3a5c] py-2.5 rounded-xl font-bold text-sm hover:bg-blue-50 transition-colors flex items-center justify-center gap-2">
-                      ✏️  Sửa lại hồ sơ
+                      <Edit2 className="w-4 h-4" /> Sửa lại hồ sơ
                     </button>
                     <Link to="/doctor/today" className="flex-1 text-center border border-gray-200 text-gray-600 py-2.5 rounded-xl font-medium text-sm hover:bg-gray-50 transition-colors">← Quay lại</Link>
                   </div>
@@ -401,7 +402,7 @@ export default function ExaminePage() {
   );
 }
 
-function InfoRow({ icon, label, value, highlight }: { icon: string; label: string; value: string; highlight?: boolean }) {
+function InfoRow({ icon, label, value, highlight }: { icon: React.ReactNode; label: string; value: string; highlight?: boolean }) {
   return (
     <div className="flex items-start gap-2">
       <span className="text-base flex-shrink-0 mt-0.5">{icon}</span>

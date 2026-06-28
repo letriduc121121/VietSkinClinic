@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/app/providers/AuthProvider';
+import { Banknote, Wallet, Users, Calendar, UserRoundCog, User, Activity, Pill, BarChart3 } from 'lucide-react';
 import { fmtVnd, fmtShort } from '@/shared/lib/format';
 import { useAdminDashboard } from '@/features/dashboard/hooks/useAdminDashboard';
 
@@ -33,10 +34,10 @@ export default function AdminDashboard() {
   const totalPatients = patientStats?.totalPatients ?? 0;
 
   const summaryCards = [
-    { label: 'Doanh thu tháng này', value: fmtVnd(monthRevenue), color: 'text-indigo-700', bg: 'bg-indigo-50 border-indigo-100', icon: '💰' },
-    { label: 'Doanh thu hôm nay', value: fmtVnd(todayRevenue), color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-100', icon: '💵' },
-    { label: 'Tổng số bệnh nhân', value: totalPatients.toLocaleString('vi-VN'), color: 'text-blue-700', bg: 'bg-blue-50 border-blue-100', icon: '👤' },
-    { label: 'Lịch hẹn hôm nay', value: appointments.length.toString(), color: 'text-amber-700', bg: 'bg-amber-50 border-amber-100', icon: '📅' },
+    { label: 'Doanh thu tháng này', value: fmtVnd(monthRevenue), color: 'text-indigo-700', bg: 'bg-indigo-50 border-indigo-100', icon: <Banknote className="w-6 h-6" /> },
+    { label: 'Doanh thu hôm nay', value: fmtVnd(todayRevenue), color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-100', icon: <Wallet className="w-6 h-6" /> },
+    { label: 'Tổng số bệnh nhân', value: totalPatients.toLocaleString('vi-VN'), color: 'text-blue-700', bg: 'bg-blue-50 border-blue-100', icon: <Users className="w-6 h-6" /> },
+    { label: 'Lịch hẹn hôm nay', value: appointments.length.toString(), color: 'text-amber-700', bg: 'bg-amber-50 border-amber-100', icon: <Calendar className="w-6 h-6" /> },
   ];
 
   return (
@@ -157,20 +158,20 @@ export default function AdminDashboard() {
                 <h2 className="font-bold text-base text-gray-900 mb-4">Quản lý nhanh</h2>
                 <div className="grid grid-cols-2 gap-3">
                   {[
-                    { label: 'Nhân sự', icon: '👨‍⚕️', to: '/admin/staff' },
-                    { label: 'Bệnh nhân', icon: '🧑', to: '/admin/patients' },
-                    { label: 'Dịch vụ & Giá', icon: '💉', to: '/admin/services' },
-                    { label: 'Danh mục thuốc', icon: '💊', to: '/admin/medicines' },
-                    { label: 'Lịch khám', icon: '📅', to: '/admin/schedule' },
-                    { label: 'Thống kê', icon: '📊', to: '/admin/stats' },
-                  ].map(a => (
+    { label: 'Nhân sự', icon: <UserRoundCog className="w-6 h-6 mb-1 text-gray-400 group-hover:text-indigo-600 transition-colors" />, to: '/admin/staff' },
+    { label: 'Bệnh nhân', icon: <User className="w-6 h-6 mb-1 text-gray-400 group-hover:text-indigo-600 transition-colors" />, to: '/admin/patients' },
+    { label: 'Dịch vụ & Giá', icon: <Activity className="w-6 h-6 mb-1 text-gray-400 group-hover:text-indigo-600 transition-colors" />, to: '/admin/services' },
+    { label: 'Danh mục thuốc', icon: <Pill className="w-6 h-6 mb-1 text-gray-400 group-hover:text-indigo-600 transition-colors" />, to: '/admin/medicines' },
+    { label: 'Lịch khám', icon: <Calendar className="w-6 h-6 mb-1 text-gray-400 group-hover:text-indigo-600 transition-colors" />, to: '/admin/schedule' },
+    { label: 'Thống kê', icon: <BarChart3 className="w-6 h-6 mb-1 text-gray-400 group-hover:text-indigo-600 transition-colors" />, to: '/admin/stats' },
+  ].map(a => (
                     <Link
                       key={a.label}
                       to={a.to}
-                      className="flex flex-col items-center justify-center p-3 rounded-xl bg-gray-50 hover:bg-indigo-50 hover:text-indigo-700 transition-colors border border-gray-100 hover:border-indigo-200"
+                      className="group flex flex-col items-center justify-center p-3 rounded-xl bg-gray-50 hover:bg-indigo-50 hover:text-indigo-700 transition-colors border border-gray-100 hover:border-indigo-200"
                     >
-                      <span className="text-xl mb-1">{a.icon}</span>
-                      <span className="text-[11px] font-semibold text-gray-600">{a.label}</span>
+                      {a.icon}
+                      <span className="text-[11px] font-semibold text-gray-600 group-hover:text-indigo-700">{a.label}</span>
                     </Link>
                   ))}
                 </div>

@@ -4,6 +4,7 @@ import { PageHeader } from '@/shared/components/PageHeader';
 import { ConfirmDialog } from '@/shared/components/ConfirmDialog';
 import { useRooms } from '@/features/rooms/hooks/useRooms';
 import type { Room } from '@/features/rooms/types/room.types';
+import { Hospital } from 'lucide-react';
 import { RoomCard } from '@/features/rooms/components/RoomCard';
 import { RoomFormDialog } from '@/features/rooms/components/RoomFormDialog';
 
@@ -79,7 +80,7 @@ export default function RoomsPage() {
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-16 text-center text-gray-400">Đang tải...</div>
       ) : rooms.length === 0 ? (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-16 text-center">
-          <div className="text-4xl mb-3">🏥</div>
+          <div className="flex justify-center mb-3"><Hospital className="w-12 h-12 text-gray-300" /></div>
           <div className="font-semibold text-gray-600 mb-1">Chưa có phòng nào</div>
           <div className="text-sm text-gray-400 mb-4">Thêm phòng khám đầu tiên để bắt đầu phân công.</div>
           <button onClick={form.open} className="inline-flex items-center gap-2 bg-[#1a3a5c] text-white px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-[#0f2540] transition-all">Thêm phòng ngay</button>

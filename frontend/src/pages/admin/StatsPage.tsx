@@ -1,14 +1,15 @@
 import { useState } from 'react';
+import { Banknote, Users, Activity } from 'lucide-react';
 import RevenueStatsPage from './RevenueStatsPage';
 import PatientStatsPage from './PatientStatsPage';
 import ServiceStatsPage from './ServiceStatsPage';
 
 type TabKey = 'revenue' | 'patient' | 'service';
 
-const TABS: { key: TabKey; label: string; icon: string }[] = [
-  { key: 'revenue', label: 'Doanh thu', icon: '💰' },
-  { key: 'patient', label: 'Bệnh nhân', icon: '🧑' },
-  { key: 'service', label: 'Dịch vụ',   icon: '💉' },
+const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
+  { key: 'revenue', label: 'Doanh thu', icon: <Banknote className="w-4 h-4" /> },
+  { key: 'patient', label: 'Bệnh nhân', icon: <Users className="w-4 h-4" /> },
+  { key: 'service', label: 'Dịch vụ',   icon: <Activity className="w-4 h-4" /> },
 ];
 
 export default function StatsPage() {
